@@ -1,0 +1,386 @@
+// End-to-end test against `wrangler dev`. It starts its own stand-ins for Scryfall, Google, and
+// Cloudflare Access on :8899. Run wrangler dev with:
+//   npx wrangler dev --var SCRYFALL_API:http://127.0.0.1:8899 \
+//     --var GOOGLE_CLIENT_ID:test-client.apps.googleusercontent.com --var GOOGLE_CLIENT_SECRET:test-secret \
+//     --var GOOGLE_AUTH_URL:http://127.0.0.1:8899/google/auth --var GOOGLE_TOKEN_URL:http://127.0.0.1:8899/google/token \
+//     --var ALLOWED_EMAILS:gina@example.com \
+//     --var ACCESS_TEAM_DOMAIN:test.cloudflareaccess.com --var ACCESS_AUD:test-aud --var ACCESS_CERTS_URL:http://127.0.0.1:8899/access/certs
+// then: npm test
+import WebSocket from 'ws';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import { startMocks, GOOGLE_CLIENT_ID } from './mocks.mjs';
+
+const mocks = await startMocks();
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8787';
+const WS_BASE = BASE.replace(/^http/, 'ws');
+const step = (s) => console.log('  ✓', s);
+const run = Date.now().toString(36);
+
+// ---------- HTTP as a signed-in user ----------
+class Account {
+  constructor(username) { this.username = username; this.cookie = ''; }
+  async call(path, { method = 'GET', body } = {}) {
+    const res = await fetch(BASE + path, {
+      method,
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(this.cookie ? { Cookie: this.cookie } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const set = res.headers.get('set-cookie');
+    if (set) this.cookie = set.split(';')[0];
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  }
+  async register(password = 'correct horse battery') {
+    const r = await this.call('/api/auth/register', { method: 'POST', body: { username: this.username, password } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    this.id = r.data.user.id;
+  }
+  async saveDeck(name, text) {
+    const r = await this.call('/api/decks/resolve', { method: 'POST', body: { text } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const d = r.data;
+    const s = await this.call('/api/decks', { method: 'POST', body: { name, main: d.main, commanders: d.commanders } });
+    assert.equal(s.status, 200, JSON.stringify(s.data));
+    return { id: s.data.id, ...d, name };
+  }
+}
+
+// ---------- WebSocket player ----------
+class Client {
+  constructor(account) { this.account = account; this.name = account.username; this.messages = []; this.waiters = []; }
+  async connect(code) {
+    this.ws = new WebSocket(`${WS_BASE}/api/rooms/${code}/ws`, { headers: { Cookie: this.account.cookie } });
+    this.ws.on('message', (d) => {
+      const m = JSON.parse(d.toString());
+      if (m.t === 'state') { this.state = m.state; this.you = m.you; }
+      this.messages.push(m);
+      this.waiters = this.waiters.filter((w) => !w(m));
+    });
+    await new Promise((r, j) => { this.ws.on('open', r); this.ws.on('error', j); });
+    this.send({ t: 'hello' });
+    await this.next('state');
+  }
+  send(m) { this.ws.send(JSON.stringify(m)); }
+  next(type, pred = () => true, ms = 4000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${this.name}: timed out waiting for ${type}`)), ms);
+      this.waiters.push((m) => {
+        if (m.t === type && pred(m)) { clearTimeout(timer); resolve(m); return true; }
+        return false;
+      });
+    });
+  }
+  act(m, pred) { const p = this.next('state', pred); this.send(m); return p; }
+  get mine() { return this.state.players.find((p) => p.id === this.you); }
+  get opp() { return this.state.players.find((p) => p.id !== this.you); }
+}
+const P = (c, m) => m.state.players.find((p) => p.id === c.you);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ================= accounts =================
+assert.equal((await fetch(`${BASE}/api/decks`)).status, 401);
+assert.equal((await fetch(`${BASE}/api/rooms`, { method: 'POST' })).status, 401);
+const alice = new Account(`alice_${run}`);
+const bob = new Account(`bob_${run}`);
+await alice.register();
+await bob.register();
+const dupe = await new Account('x').call('/api/auth/register', { method: 'POST', body: { username: alice.username.toUpperCase(), password: 'whatever123' } });
+assert.equal(dupe.status, 400);
+const badLogin = await new Account('x').call('/api/auth/login', { method: 'POST', body: { username: alice.username, password: 'wrong password' } });
+assert.equal(badLogin.status, 401);
+const relog = new Account(alice.username);
+assert.equal((await relog.call('/api/auth/login', { method: 'POST', body: { username: alice.username, password: 'correct horse battery' } })).status, 200);
+const evil = await fetch(`${BASE}/api/decks`, { method: 'POST', headers: { Cookie: alice.cookie, Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{}' });
+assert.equal(evil.status, 403);
+step('accounts: sign-up, unique names (any case), wrong password refused, cross-site requests refused');
+
+// ================= Google sign-in =================
+const cfg = (await (await fetch(`${BASE}/api/auth/config`)).json());
+assert.deepEqual(cfg, { password: true, google: true, access: true });
+async function google(code, { badState = false } = {}) {
+  const start = await fetch(`${BASE}/api/auth/google/start`, { redirect: 'manual' });
+  assert.equal(start.status, 302);
+  const to = new URL(start.headers.get('location'));
+  assert.equal(to.searchParams.get('client_id'), GOOGLE_CLIENT_ID);
+  assert.equal(to.searchParams.get('code_challenge_method'), 'S256');
+  const oauthCookie = start.headers.get('set-cookie').split(';')[0];
+  const state = badState ? 'forged' : to.searchParams.get('state');
+  const back = await fetch(`${BASE}/api/auth/google/callback?code=${code}&state=${state}`, { redirect: 'manual', headers: { Cookie: oauthCookie } });
+  assert.equal(back.status, 302);
+  const session = back.headers.getSetCookie().find((c) => c.startsWith('farcast_session=') && !c.startsWith('farcast_session=;'));
+  return { location: back.headers.get('location'), session: session?.split(';')[0] };
+}
+const g1 = await google('gina');
+assert.equal(g1.location, '/');
+const gina = new Account('Gina');
+gina.cookie = g1.session;
+let meG = (await gina.call('/api/me')).data.user;
+assert.equal(meG.username, 'Gina');
+assert.equal(meG.needsName, true, 'new Google users choose their name');
+assert.equal((await gina.call('/api/me', { method: 'PATCH', body: { username: alice.username } })).status, 400, 'names stay unique');
+const renamedG = (await gina.call('/api/me', { method: 'PATCH', body: { username: `Gina ${run}` } })).data.user;
+assert.equal(renamedG.username, `Gina ${run}`);
+const g2 = await google('gina');
+const gina2 = new Account('Gina'); gina2.cookie = g2.session;
+meG = (await gina2.call('/api/me')).data.user;
+assert.equal(meG.id, renamedG.id, 'signing in again finds the same account');
+assert.equal(meG.needsName, false);
+assert.match(decodeURIComponent((await google('gina', { badState: true })).location), /expired/);
+const strangerTry = await google('stranger');
+assert.match(decodeURIComponent(strangerTry.location), /invite list/);
+assert.equal(strangerTry.session, undefined);
+step('Google: PKCE redirect, account created on first sign-in, name chosen once, forged state and uninvited emails refused');
+
+// ================= Cloudflare Access =================
+const viaAccess = (token) => fetch(`${BASE}/api/me`, { headers: { 'Cf-Access-Jwt-Assertion': token } });
+const goodToken = mocks.signAccess({ sub: 'access-sub-hal', email: 'hal@example.com' });
+const halRes = await viaAccess(goodToken);
+assert.equal(halRes.status, 200);
+const hal = (await halRes.json()).user;
+assert.equal(hal.username, 'hal');
+assert.equal(hal.needsName, true);
+assert.equal((await (await viaAccess(goodToken)).json()).user.id, hal.id, 'same Access user, same account');
+assert.equal((await viaAccess(mocks.signAccess({ sub: 'x', email: 'x@example.com', aud: ['other-app'] }))).status, 401, 'wrong audience');
+assert.equal((await viaAccess(mocks.signAccess({ sub: 'x', email: 'x@example.com', exp: 1 }))).status, 401, 'expired');
+const { privateKey: otherKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+assert.equal((await viaAccess(mocks.signAccess({ sub: 'x', email: 'x@example.com' }, { key: otherKey }))).status, 401, 'forged signature');
+const tampered = goodToken.split('.'); tampered[1] = Buffer.from(JSON.stringify({ sub: 'access-sub-hal', email: 'evil@example.com', aud: ['test-aud'], iss: 'https://test.cloudflareaccess.com', exp: 9e9 })).toString('base64url');
+assert.equal((await viaAccess(tampered.join('.'))).status, 401, 'tampered claims');
+step('Cloudflare Access: signed tokens sign you in; wrong audience, expired, forged, and tampered tokens refused');
+
+// ================= decks =================
+const list = (cmd, extra) => `Commander\n1 ${cmd}\n\nDeck\n20 Forest\n${Array.from({ length: 20 }, (_, i) => `1 ${extra} ${i}`).join('\n')}\n1 Sol Ring (CMM) 400`;
+const aDeck = await alice.saveDeck('Tatyova Value', list('Alice Commander', 'Elf'));
+const bDeck1 = await bob.saveDeck('Krenko Goblins', list('Bob Commander', 'Goblin'));
+assert.equal(aDeck.commanders[0].name, 'Alice Commander');
+assert.ok(aDeck.commanders[0].artCrop.includes('/art_crop/'));
+assert.ok(aDeck.main.find((e) => e.def.set === 'cmm' && e.def.cn === '400'), 'exact printing kept');
+const notFound = await alice.call('/api/decks/resolve', { method: 'POST', body: { text: '1 Not A Real Card\n1 Forest' } });
+assert.deepEqual(notFound.data.notFound, ['Not A Real Card']);
+assert.equal((await bob.call(`/api/decks/${aDeck.id}`)).status, 404, "Bob can't read Alice's deck");
+const aList = (await alice.call('/api/decks')).data.decks;
+assert.equal(aList.length, 1);
+assert.equal(aList[0].card_count, 42);
+step('decks: look up cards, save, exact printings kept, unknown cards reported, decks are private');
+
+const twoBox = (commander, text) => alice.call('/api/decks/resolve', { method: 'POST', body: { commander, text } });
+let tb = (await twoBox('1 Alice Commander', '1 Alice Commander\n1 Sol Ring\n30 Forest')).data;
+assert.deepEqual(tb.commanders.map((c) => c.name), ['Alice Commander']);
+assert.equal(tb.main.reduce((n, e) => n + e.count, 0), 31, 'commander listed in the deck box too is counted once');
+assert.ok(!tb.main.some((e) => e.def.name === 'Alice Commander'));
+tb = (await twoBox('Partner One Commander\nPartner Two Commander', '1 Sol Ring')).data;
+assert.equal(tb.commanders.length, 2, 'partners: two commanders, counts optional');
+const three = await twoBox('1 A Commander\n1 B Commander\n1 C Commander', '1 Sol Ring');
+assert.equal(three.status, 400);
+assert.match(three.data.error, /at most two commanders/);
+tb = (await twoBox('', '60 Forest\n4 Sol Ring')).data;
+assert.equal(tb.commanders.length, 0);
+assert.equal(tb.main.reduce((n, e) => n + e.count, 0), 64, 'no 99-card rule');
+step('two boxes: commander counted once if repeated, partners allowed, a third commander explained, any deck size');
+
+// ================= lobby =================
+const { data: { code } } = await alice.call('/api/rooms', { method: 'POST', body: { startingLife: 40 } });
+const a = new Client(alice);
+const b = new Client(bob);
+await a.connect(code);
+await b.connect(code);
+assert.equal(a.state.players.length, 2);
+assert.equal(a.mine.name, alice.username, 'seat uses the account name');
+
+const carol = new Account(`carol_${run}`);
+await carol.register();
+const c = new WebSocket(`${WS_BASE}/api/rooms/${code}/ws`, { headers: { Cookie: carol.cookie } });
+await new Promise((r) => c.on('open', r));
+const rejected = new Promise((r) => c.on('message', (d) => { const m = JSON.parse(d); if (m.t === 'rejected') r(m); }));
+c.send(JSON.stringify({ t: 'hello' }));
+assert.match((await rejected).message, /full/);
+
+const anon = new WebSocket(`${WS_BASE}/api/rooms/${code}/ws`);
+anon.on('error', () => {});
+const anonStatus = await new Promise((r) => anon.on('unexpected-response', (_, res) => r(res.statusCode)));
+assert.equal(anonStatus, 401);
+step('rooms need an account; third player refused; seats use usernames');
+
+b.send({ t: 'selectDeck', deckId: aDeck.id });
+assert.match((await b.next('error')).message, /wasn't found/);
+b.send({ t: 'setDeck', deck: { name: 'Hacked', main: [{ count: 60, def: { name: 'Black Lotus' } }] } });
+await wait(300);
+assert.equal(b.mine.deck, null, 'raw card data from the browser is ignored');
+await a.act({ t: 'selectDeck', deckId: aDeck.id }, (m) => P(a, m).deck?.id === aDeck.id);
+await b.act({ t: 'selectDeck', deckId: bDeck1.id }, (m) => P(b, m).deck?.id === bDeck1.id);
+step('players can only pick their own saved decks; browser-sent card lists are ignored');
+
+a.send({ t: 'ready', ready: true });
+b.send({ t: 'ready', ready: true });
+await a.next('state', (m) => m.state.players.every((p) => p.ready));
+await a.act({ t: 'start' }, (m) => m.state.status === 'playing');
+await wait(200);
+assert.equal(b.state.status, 'playing');
+assert.equal(a.opp.deck.mat.colors, 'GU');
+assert.ok(a.opp.deck.mat.art.includes('/art_crop/'));
+step("game starts; each side sees the other's playmat art");
+
+// ================= hidden information =================
+assert.equal(a.mine.hand.length, 7);
+assert.equal(a.opp.hand, null);
+assert.equal(a.mine.libraryCount, 34); // 41 main-deck cards minus 7 drawn
+const raw = JSON.stringify(a.messages.at(-1));
+for (const card of b.mine.hand) assert.ok(!raw.includes(card.id), "Alice never sees ids of Bob's hand");
+assert.ok(!raw.includes(alice.cookie.split('=')[1]) && !raw.includes(bob.cookie.split('=')[1]), 'session tokens never broadcast');
+step('opponent hand, libraries, and session tokens stay hidden');
+
+// ================= ownership rules =================
+b.send({ t: 'life', playerId: a.you, delta: -5 });
+assert.match((await b.next('error')).message, /Only that player/);
+b.send({ t: 'playerCounter', playerId: a.you, kind: 'poison', delta: 1 });
+assert.match((await b.next('error')).message, /Only that player/);
+b.send({ t: 'cmdDamage', playerId: a.you, sourceId: b.you, delta: 4 });
+assert.match((await b.next('error')).message, /Only the player taking/);
+await a.act({ t: 'life', delta: -5 }, (m) => P(a, m).life === 35);
+await a.act({ t: 'cmdDamage', playerId: a.you, sourceId: b.you, delta: 4 }, (m) => P(a, m).life === 31);
+await a.act({ t: 'playerCounter', kind: 'poison', delta: 2 }, (m) => P(a, m).counters.poison === 2);
+b.send({ t: 'move', cardId: a.mine.hand[0].id, to: 'graveyard' });
+assert.match((await b.next('error')).message, /not yours/);
+step('only you change your life, poison, and commander damage; nobody moves your cards');
+
+// ================= core play =================
+const land = a.mine.hand.find((x) => /Land/.test(x.def.typeLine)) ?? a.mine.hand[0];
+await a.act({ t: 'move', cardId: land.id, to: 'battlefield' }, (m) => P(a, m).battlefield.length === 1);
+const onField = a.mine.battlefield[0];
+await a.act({ t: 'counter', cardId: onField.id, kind: '+1/+1', delta: 2 }, (m) => P(a, m).battlefield[0].counters['+1/+1'] === 2);
+await a.act({ t: 'copy', cardId: onField.id }, (m) => P(a, m).battlefield.length === 2);
+await a.act({ t: 'token', name: 'Soldier', pt: '1/1', count: 2 }, (m) => P(a, m).battlefield.length === 4);
+await a.act({ t: 'mill', n: 2 }, (m) => P(a, m).graveyard.length === 2);
+const libBefore = a.mine.libraryCount;
+await a.act({ t: 'shuffle', withGraveyard: true }, (m) => P(a, m).graveyard.length === 0);
+assert.equal(a.mine.libraryCount, libBefore + 2);
+// put cards into the library at a position
+const peek = async (n) => { const pr = a.next('library'); a.send({ t: 'viewLibrary', quiet: true, ...(n ? { n } : {}) }); return (await pr).cards.map((x) => x.id); };
+const third = a.mine.hand[0];
+await a.act({ t: 'move', cardId: third.id, to: 'library', pos: 'top', depth: 3 }, (m) => !P(a, m).hand.some((x) => x.id === third.id));
+assert.equal((await peek(5))[2], third.id, '3rd from the top');
+const logLine = a.state.log.at(-1).text;
+assert.match(logLine, /put a card 3rd from the top of their library/);
+assert.ok(!logLine.includes(third.def.name), 'a card from your hand stays unnamed');
+const second = a.mine.hand[0];
+await a.act({ t: 'move', cardId: second.id, to: 'library', pos: 'bottom', depth: 2 }, (m) => !P(a, m).hand.some((x) => x.id === second.id));
+let all = await peek();
+assert.equal(all[all.length - 2], second.id, '2nd from the bottom');
+const topCard = all[0];
+await a.act({ t: 'move', cardId: topCard, to: 'library', pos: 'top', depth: 4 }, () => true);
+assert.equal((await peek(6))[3], topCard, 'reorder within the library');
+const deep = a.mine.hand[0];
+await a.act({ t: 'move', cardId: deep.id, to: 'library', pos: 'top', depth: 999 }, (m) => !P(a, m).hand.some((x) => x.id === deep.id));
+all = await peek();
+assert.equal(all.at(-1), deep.id, 'a position past the end goes to the bottom');
+const bView = JSON.stringify(b.messages.slice(-6));
+assert.ok(!bView.includes(third.id), 'opponent never sees the card');
+step('library positions: 3rd from top, 2nd from bottom, reorder within, past the end; card stays hidden');
+
+const first = a.state.turn.activeId === a.you ? a : b;
+await first.act({ t: 'beginTurn' }, (m) => m.state.turn.begun);
+await first.act({ t: 'passTurn' }, (m) => m.state.turn.number === 2);
+step('counters, copies, tokens, mill, graveyard shuffle, begin turn, pass turn');
+
+// ================= results and records =================
+await b.act({ t: 'concede' }, (m) => m.state.status === 'ended');
+await wait(300);
+let rec = (await alice.call(`/api/records?deck=${aDeck.id}&opponent=${bob.id}&opponentDeck=${bDeck1.id}`)).data;
+assert.deepEqual(rec, { overall: { wins: 1, losses: 0 }, vsPlayer: { wins: 1, losses: 0 }, exact: { wins: 1, losses: 0 } });
+assert.deepEqual((await bob.call(`/api/records?opponent=${alice.id}`)).data, { overall: { wins: 0, losses: 1 }, vsPlayer: null, exact: null }, 'overall record works before choosing a deck');
+assert.equal((await bob.call(`/api/records?deck=${aDeck.id}&opponent=${alice.id}`)).status, 404, "can't query records for someone else's deck");
+step('game 1: Alice wins; 1–0 overall vs Bob, 1–0 with this deck, 1–0 vs Krenko Goblins; Bob sees 0–1 before picking a deck');
+
+// Bob renames (same cards) → same deck. Then changes a card → new deck with a fresh record.
+const renamed = await bob.call(`/api/decks/${bDeck1.id}`, { method: 'PUT', body: { name: 'Krenko Swarm', main: bDeck1.main, commanders: bDeck1.commanders } });
+assert.deepEqual(renamed.data, { id: bDeck1.id, newVersion: false });
+const changedMain = bDeck1.main.map((e) => (e.def.name === 'Forest' ? { ...e, count: e.count - 1 } : e));
+const extra = (await bob.call('/api/decks/resolve', { method: 'POST', body: { text: '1 Goblin Extra' } })).data.main[0];
+const v2 = await bob.call(`/api/decks/${bDeck1.id}`, { method: 'PUT', body: { name: 'Krenko Swarm', main: [...changedMain, extra], commanders: bDeck1.commanders } });
+assert.equal(v2.data.newVersion, true);
+assert.notEqual(v2.data.id, bDeck1.id);
+const bobDecks = (await bob.call('/api/decks')).data.decks;
+assert.deepEqual(bobDecks.map((d) => d.id), [v2.data.id], 'old version leaves the deck list');
+assert.equal(bobDecks[0].wins + bobDecks[0].losses, 0, 'new version starts with a fresh record');
+step('renaming keeps the deck; changing a card makes a new deck with a fresh record');
+
+await b.act({ t: 'rematch' }, (m) => m.state.status === 'lobby');
+await b.act({ t: 'selectDeck', deckId: v2.data.id }, (m) => P(b, m).deck?.id === v2.data.id);
+a.send({ t: 'ready', ready: true });
+b.send({ t: 'ready', ready: true });
+await a.next('state', (m) => m.state.players.every((p) => p.ready));
+await a.act({ t: 'start' }, (m) => m.state.status === 'playing');
+
+// Claiming a win needs the other player to agree.
+await b.act({ t: 'endGame', winnerId: b.you }, (m) => m.state.pendingResult?.winnerId === b.you);
+await wait(150);
+assert.equal(a.state.status, 'playing', 'a claim alone does not end the game');
+assert.equal(a.state.pendingResult.by, b.you, 'Alice sees the claim');
+await a.act({ t: 'rejectResult' }, (m) => m.state.pendingResult === null);
+assert.match(a.state.log.at(-1).text, /didn't agree/);
+await b.act({ t: 'endGame', winnerId: b.you }, (m) => !!m.state.pendingResult);
+b.send({ t: 'confirmResult' });
+assert.match((await b.next('error')).message, /other player needs to confirm/);
+assert.equal(b.state.status, 'playing');
+await a.act({ t: 'confirmResult' }, (m) => m.state.status === 'ended');
+assert.equal(a.state.winnerId, b.you);
+assert.equal(a.state.endReason, 'agreed');
+await wait(300);
+step('claiming a win waits for the other player; "keep playing" cancels it; you can\'t confirm your own claim; confirming ends it');
+
+rec = (await alice.call(`/api/records?deck=${aDeck.id}&opponent=${bob.id}&opponentDeck=${v2.data.id}`)).data;
+assert.deepEqual(rec, { overall: { wins: 1, losses: 1 }, vsPlayer: { wins: 1, losses: 1 }, exact: { wins: 0, losses: 1 } });
+const oldMatch = (await alice.call(`/api/records?deck=${aDeck.id}&opponent=${bob.id}&opponentDeck=${bDeck1.id}`)).data;
+assert.deepEqual(oldMatch.exact, { wins: 1, losses: 0 }, 'old version keeps its record');
+const aDecks = (await alice.call('/api/decks')).data.decks;
+assert.equal(`${aDecks[0].wins}-${aDecks[0].losses}`, '1-1');
+const games = (await alice.call('/api/games')).data.games;
+assert.equal(games.length, 2);
+assert.equal((await carol.call('/api/games')).data.games.length, 0, 'history is per account');
+step('game 2: Bob wins with the new version; Alice is 1–1 vs Bob, 0–1 vs the new deck, old matchup still 1–0');
+
+// Admitting defeat ends the game at once; "no winner" needs agreement and doesn't count.
+await a.act({ t: 'rematch' }, (m) => m.state.status === 'lobby');
+a.send({ t: 'ready', ready: true }); b.send({ t: 'ready', ready: true });
+await a.next('state', (m) => m.state.players.every((p) => p.ready));
+await a.act({ t: 'start' }, (m) => m.state.status === 'playing');
+await a.act({ t: 'endGame', winnerId: null }, (m) => !!m.state.pendingResult);
+await a.act({ t: 'rejectResult' }, (m) => m.state.pendingResult === null); // withdraw own claim
+await a.act({ t: 'endGame', winnerId: b.you }, (m) => m.state.status === 'ended');
+assert.equal(a.state.winnerId, b.you, '"opponent won" ends immediately');
+await wait(300);
+rec = (await alice.call(`/api/records?opponent=${bob.id}`)).data;
+assert.deepEqual(rec.overall, { wins: 1, losses: 2 });
+step('reporting that your opponent won ends the game at once; claims can be withdrawn; Alice now 1–2 vs Bob');
+
+// ================= unranked games =================
+const { data: { code: code2 } } = await alice.call('/api/rooms', { method: 'POST', body: { startingLife: 20, ranked: false } });
+const a2 = new Client(alice), b2 = new Client(bob);
+await a2.connect(code2); await b2.connect(code2);
+assert.equal(a2.state.ranked, false, 'room created unranked');
+await a2.act({ t: 'selectDeck', deckId: aDeck.id }, (m) => P(a2, m).deck?.id === aDeck.id);
+await b2.act({ t: 'selectDeck', deckId: v2.data.id }, (m) => P(b2, m).deck?.id === v2.data.id);
+a2.send({ t: 'ready', ready: true }); b2.send({ t: 'ready', ready: true });
+await a2.next('state', (m) => m.state.players.every((p) => p.ready));
+await b2.act({ t: 'setRanked', ranked: true }, (m) => m.state.ranked === true);
+assert.ok(b2.state.players.every((p) => !p.ready), 'switching the game type asks everyone to ready up again');
+await a2.act({ t: 'setRanked', ranked: false }, (m) => m.state.ranked === false);
+a2.send({ t: 'ready', ready: true }); b2.send({ t: 'ready', ready: true });
+await a2.next('state', (m) => m.state.players.every((p) => p.ready));
+await a2.act({ t: 'start' }, (m) => m.state.status === 'playing');
+await a2.act({ t: 'endGame', winnerId: a2.you }, (m) => m.state.status === 'ended');
+assert.equal(a2.state.winnerId, a2.you, 'unranked: claiming a win ends the game without confirmation');
+await wait(300);
+assert.deepEqual((await alice.call(`/api/records?opponent=${bob.id}`)).data.overall, { wins: 1, losses: 2 }, 'unranked win not counted');
+assert.equal((await alice.call('/api/decks')).data.decks.find((d) => d.id === aDeck.id).wins, 1, 'deck record unchanged');
+const hist = (await alice.call('/api/games')).data.games;
+assert.equal(hist[0].ranked, 0, 'history marks it unranked');
+assert.equal(hist.filter((g) => g.ranked === 1).length, 3);
+step('unranked: chosen at creation or in the lobby (switching resets ready), ends without confirmation, kept in history, never counted');
+a2.ws.close(); b2.ws.close();
+
+a.ws.close();
+b.ws.close();
+c.close();
+mocks.server.close();
+console.log('\nAll checks passed.');

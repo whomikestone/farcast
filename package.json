@@ -1,0 +1,19 @@
+{
+  "name": "farcast",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply farcast --local",
+    "db:migrate": "wrangler d1 migrations apply farcast --remote",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261001.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.147.0",
+    "ws": "^8.18.0"
+  }
+}
