@@ -24,15 +24,37 @@ runs offline. Start the dev server with the test settings listed at the top of
 
 ## Deploy to Cloudflare
 
-```bash
-npx wrangler login
-npx wrangler d1 create farcast          # copy the database_id it prints
-# paste it into wrangler.jsonc → d1_databases[0].database_id
-npm run db:migrate                      # creates the tables in the remote D1
-npm run deploy
-```
+Production deploys run automatically from GitHub through Cloudflare Workers Builds: every push to
+`main` deploys the site.
 
-Durable Objects with SQLite storage are available on the Workers free plan.
+**Already done:** the production D1 database `farcast` exists (id in `wrangler.jsonc`) with all
+migrations in `migrations/` applied.
+
+**One-time setup**
+1. Push this repository to GitHub (see "Push to GitHub" below).
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Import a repository** → choose the
+   GitHub repo. Keep the project name **farcast** (it must match `name` in `wrangler.jsonc`),
+   leave the build command empty, and keep the deploy command `npx wrangler deploy`.
+3. Save and deploy. The site appears at `https://farcast.<your-subdomain>.workers.dev`.
+4. Custom domain: Worker → **Settings** → **Domains & Routes** → **Add** → **Custom domain**. The
+   domain must be a zone in this Cloudflare account. Cloudflare creates the DNS record and
+   certificate.
+
+**Database changes later.** When a new file is added to `migrations/`, apply it before (or right
+after) pushing: `npm run db:migrate` (needs `npx wrangler login` once).
+
+**Before sharing the link,** decide who can sign up: put the site behind Cloudflare Access, turn
+on Google sign-in with `ALLOWED_EMAILS`, or both (see Sign-in). With only name + password on,
+anyone who finds the URL can create an account.
+
+## Push to GitHub
+
+Create an empty repository on GitHub (no README or .gitignore), then from this folder:
+
+```bash
+git remote add origin https://github.com/<you>/farcast.git
+git push -u origin main
+```
 
 ## Fonts
 
@@ -66,12 +88,51 @@ and Access shows them a Google (or email code) login first. Free for up to 50 us
 **Name and password.** On by default. There's no password reset (no email is set up), so once
 Access or Google is on, consider turning it off.
 
-**Rate limiting** is not built into the app. Add Cloudflare rate limiting rules (Security → WAF →
-Rate limiting rules) for `POST /api/auth/login` and `POST /api/auth/register`, and optionally for
-`/api/auth/google/*` and `/api/decks/resolve` (which calls Scryfall).
+**Rate limiting** is handled by your own Cloudflare rules; see "Addresses" below for the paths.
 
 New Google and Access users choose the name other players see on their first visit. Anyone can
 change their name later by clicking it at the top of the page.
+
+## Addresses
+
+Screens people see (all served by the same page):
+
+| Address | Screen |
+| --- | --- |
+| `/signin`, `/signup` | Sign in, create an account (`?next=` returns you to where you were going) |
+| `/welcome` | First visit through Google or Access: choose the name others see |
+| `/` | Start or join a game |
+| `/decks`, `/decks/new`, `/decks/<id>` | Your decks, create or edit a deck |
+| `/r/<CODE>` | A game room (lobby and table) |
+
+Every request the browser sends, for writing your own Cloudflare rules. Each action has its own
+path; where a path is shared, the method tells them apart.
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /api/auth/config` | Which sign-in methods are on |
+| `POST /api/auth/login` | Name + password sign-in |
+| `POST /api/auth/register` | New name + password account |
+| `POST /api/auth/logout` | Sign out |
+| `GET /api/auth/google/start` | Start Google sign-in (redirects to Google) |
+| `GET /api/auth/google/callback` | Google sends the player back here |
+| `GET /api/me` | Who is signed in |
+| `PATCH /api/me` | Change your name |
+| `POST /api/decks/resolve` | Look up pasted cards (calls Scryfall) |
+| `GET /api/decks` | List your decks |
+| `POST /api/decks` | Save a new deck |
+| `GET /api/decks/<id>` | Open one deck |
+| `PUT /api/decks/<id>` | Save changes to a deck |
+| `DELETE /api/decks/<id>` | Delete a deck |
+| `GET /api/records` | Head-to-head records for the lobby |
+| `GET /api/games` | Your game history |
+| `POST /api/rooms` | Create a game room |
+| `GET /api/rooms/<CODE>` | Check that a room exists |
+| `GET /api/rooms/<CODE>/ws` | The live game connection (WebSocket); one per player, stays open |
+
+**Important:** rules apply only to traffic through your own domain. Once your custom domain
+works, turn off the `workers.dev` address (Worker → Settings → Domains & Routes → workers.dev →
+Disable) so nobody can go around the rules.
 
 ## How it works
 

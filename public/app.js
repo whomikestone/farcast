@@ -109,7 +109,7 @@ async function api(path, { method = 'GET', body } = {}) {
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith('/api/auth/')) {
     S.user = null;
-    renderAuth();
+    showSignIn();
     throw new SignedOut();
   }
   if (!res.ok) throw new Error(data.error || 'Something went wrong.');
@@ -122,11 +122,45 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // ---------------------------------------------------------------- routing
 
+// All reads and changes of the address go through these three helpers.
+function currentPath() { return location.pathname; }
+function currentSearch() { return location.search; }
+function setPath(path, replace = false) {
+  if (replace) history.replaceState(null, '', path);
+  else history.pushState(null, '', path);
+}
+
 function navigate(path) {
-  history.pushState(null, '', path);
+  setPath(path);
   boot();
 }
 window.addEventListener('popstate', boot);
+
+// Screens before you're signed in have their own addresses: /signin, /signup, /welcome.
+// ?next= remembers where you were going (an invite link, say) so you land there afterwards.
+const AUTH_PATHS = ['/signin', '/signup', '/welcome'];
+const isAuthPath = (p) => AUTH_PATHS.includes(p.replace(/\/$/, ''));
+
+function nextTarget() {
+  const next = new URLSearchParams(currentSearch()).get('next') ?? '';
+  // Only same-site paths, never "//elsewhere.com" or "https://…".
+  const ok = /^\/(?!\/)/.test(next) && !isAuthPath(next.split('?')[0]) && !/^\/(cdn-cgi|api)\//.test(next);
+  return ok ? next : '/';
+}
+
+function withNext(authPath) {
+  const here = currentPath();
+  const internal = here.startsWith('/cdn-cgi/') || here.startsWith('/api/');
+  const next = isAuthPath(here) || internal ? nextTarget() : here + currentSearch();
+  return next && next !== '/' ? `${authPath}?next=${encodeURIComponent(next)}` : authPath;
+}
+
+function showSignIn() {
+  const here = currentPath();
+  if (here === '/signup') return renderAuth('register');
+  if (here !== '/signin') setPath(withNext('/signin'), true);
+  renderAuth('signin');
+}
 
 async function boot() {
   closeMenu();
@@ -139,8 +173,18 @@ async function boot() {
       return; // api() already showed the sign-in screen
     }
   }
-  if (S.user.needsName) return renderWelcome();
-  const path = location.pathname;
+  // Coming back from Google: go where you were headed before you left.
+  let afterGoogle = null;
+  try { afterGoogle = sessionStorage.getItem('farcast:next'); sessionStorage.removeItem('farcast:next'); } catch { /* storage blocked */ }
+  if (afterGoogle) {
+    if (/^\/(?!\/)/.test(afterGoogle)) setPath(afterGoogle, true);
+  }
+  if (S.user.needsName) {
+    if (currentPath() !== '/welcome') setPath(withNext('/welcome'), true);
+    return renderWelcome();
+  }
+  if (isAuthPath(currentPath())) setPath(nextTarget(), true);
+  const path = currentPath();
   const room = path.match(/^\/r\/([A-Za-z0-9]{6})\/?$/);
   const deck = path.match(/^\/decks\/([0-9a-f-]{36}|new)\/?$/);
   if (room) openRoom(room[1].toUpperCase());
@@ -174,8 +218,8 @@ async function signOut() {
   // With Cloudflare Access, also end the Access session or it signs you straight back in.
   if (S.auth?.access) return location.assign('/cdn-cgi/access/logout');
   S.user = null;
-  history.pushState(null, '', '/');
-  renderAuth();
+  setPath('/signin');
+  renderAuth('signin');
 }
 
 function renameDialog() {
@@ -204,6 +248,7 @@ function renderWelcome() {
           status.textContent = '';
           try {
             S.user = { ...(await api('/api/me', { method: 'PATCH', body: { username: e.currentTarget.elements.username.value.trim() } })).user, needsName: false };
+            setPath(nextTarget(), true);
             boot();
           } catch (err) {
             if (!(err instanceof SignedOut)) status.textContent = err.message;
@@ -228,9 +273,10 @@ async function renderAuth(mode = 'signin') {
   if (!S.auth) S.auth = await fetch('/api/auth/config').then((r) => r.json()).catch(() => ({ password: true }));
   const cfg = S.auth;
   const creating = mode === 'register';
-  const authError = new URLSearchParams(location.search).get('auth_error');
+  const authError = new URLSearchParams(currentSearch()).get('auth_error');
   const status = h('p', { class: 'hint error', role: 'alert' }, authError ?? '');
-  if (authError) history.replaceState(null, '', '/');
+  const wanted = creating ? '/signup' : '/signin';
+  if (currentPath() !== wanted || authError) setPath(withNext(wanted), true);
   const submit = async (e) => {
     e.preventDefault();
     const f = e.currentTarget.elements;
@@ -280,13 +326,19 @@ async function renderAuth(mode = 'signin') {
         h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, creating ? 'Create account' : 'Sign in')),
         h('p', { class: 'hint' },
           creating ? 'Already have an account? ' : 'New here? ',
-          h('a', { href: '#', onclick: (e) => { e.preventDefault(); renderAuth(creating ? 'signin' : 'register'); } }, creating ? 'Sign in' : 'Create an account')))));
+          h('a', {
+            href: withNext(creating ? '/signin' : '/signup'),
+            onclick: (e) => { e.preventDefault(); setPath(withNext(creating ? '/signin' : '/signup')); renderAuth(creating ? 'signin' : 'register'); },
+          }, creating ? 'Sign in' : 'Create an account')))));
   app.querySelector('[autofocus]')?.focus();
 }
 
 // ---------------------------------------------------------------- home
 
 function startGoogle() {
+  // Google sends you back to "/", so remember where you were headed (an invite link, say).
+  const next = nextTarget();
+  try { if (next !== '/') sessionStorage.setItem('farcast:next', next); } catch { /* storage blocked */ }
   location.assign('/api/auth/google/start');
 }
 
@@ -477,7 +529,7 @@ async function renderDeckEditor(deckId) {
   leaveSocket();
   const app = $('#app');
   app.className = 'home';
-  const returnTo = new URLSearchParams(location.search).get('return');
+  const returnTo = new URLSearchParams(currentSearch()).get('return');
   const backTo = returnTo && /^[A-Z0-9]{6}$/.test(returnTo) ? `/r/${returnTo}` : '/decks';
 
   // The text boxes are the source of truth. Cards are checked automatically whenever they change,

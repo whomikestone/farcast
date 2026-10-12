@@ -26,7 +26,10 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Unranked games: kept in history, never counted toward records
 
 **To finish**
-- ⬜ Deploy to Cloudflare (D1 database, migrations, `wrangler deploy`)
+- ✅ Production D1 database created and migrated
+- ✅ Git repository with a typecheck workflow; deploys configured for Cloudflare Workers Builds
+- ⬜ Push to GitHub and connect the repo in Workers & Pages (first deploy)
+- ⬜ Add the custom domain
 - ⬜ Confirm real Scryfall card images and commander playmats on the deployed site
 - ⬜ Set up sign-in: Access policy with your group's emails, and/or Google OAuth client
 - ⬜ Add Cloudflare rate limiting rules for `/api/auth/*` and `/api/decks/resolve`

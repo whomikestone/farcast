@@ -180,7 +180,7 @@ export async function googleStart(env: Env, url: URL): Promise<Response> {
 export async function googleCallback(env: Env, request: Request, url: URL): Promise<Response> {
   const secure = url.protocol === 'https:';
   const fail = (message: string) => {
-    const headers = new Headers({ Location: `/?auth_error=${encodeURIComponent(message)}` });
+    const headers = new Headers({ Location: `/signin?auth_error=${encodeURIComponent(message)}` });
     headers.append('Set-Cookie', `${OAUTH_COOKIE}=; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`);
     return new Response(null, { status: 302, headers });
   };
