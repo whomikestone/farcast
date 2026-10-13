@@ -164,6 +164,16 @@ function showSignIn() {
 
 async function boot() {
   closeMenu();
+  // What's new is public: shown whether or not you're signed in.
+  if (currentPath().replace(/\/$/, '') === '/changelog') {
+    if (!S.user) {
+      try {
+        const r = await fetch('/api/me');
+        if (r.ok) ({ user: S.user, auth: S.auth } = await r.json());
+      } catch { /* show it signed out */ }
+    }
+    return renderChangelog();
+  }
   if (!S.user) {
     try {
       const me = await api('/api/me');
@@ -208,8 +218,81 @@ function topBar() {
     h('nav', { class: 'top-nav' },
       link('/', 'Play'),
       link('/decks', 'Your decks'),
-      h('button', { class: 'who-am-i', type: 'button', title: 'Change the name other players see', onclick: renameDialog }, S.user.username),
+      changelogLink(),
+      h('span', { class: 'who-am-i', title: 'Your name at the table' }, S.user.username),
       h('button', { class: 'btn small ghost', type: 'button', onclick: signOut }, 'Sign out')));
+}
+
+// ---------------------------------------------------------------- what's new
+
+let changelogCache = null;
+async function loadChangelog() {
+  if (!changelogCache) {
+    changelogCache = fetch('/api/changelog').then((r) => r.json()).then((d) => d.entries ?? []).catch(() => {
+      changelogCache = null;
+      return [];
+    });
+  }
+  return changelogCache;
+}
+
+// "What's new" with a dot when there's an entry newer than the last one you looked at.
+// A pill beside the wordmark: "What's new · 10.12", glowing when there's something you haven't seen.
+function changelogLink() {
+  const date = h('span', { class: 'wn-date' });
+  const a = link('/changelog', [h('span', { class: 'wn-label' }, "What's new"), date], { class: 'whats-new' });
+  loadChangelog().then((entries) => {
+    const latest = entries[0]?.date;
+    if (!latest) return;
+    date.textContent = latest.slice(5); // "10.12"
+    if (latest > store.get('changelogSeen', '')) {
+      a.classList.add('has-new');
+      a.append(h('span', { class: 'new-dot', 'aria-hidden': 'true' }));
+      a.setAttribute('aria-label', `What's new: updated ${latest}, not yet seen`);
+    } else {
+      a.setAttribute('aria-label', `What's new: updated ${latest}`);
+    }
+  });
+  return a;
+}
+
+function formatChangelogDate(d) {
+  const [y, m, day] = d.split('.').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+async function renderChangelog() {
+  leaveSocket();
+  const app = $('#app');
+  app.className = 'home';
+  const list = h('ol', { class: 'changelog' }, h('li', { class: 'hint' }, 'Loading…'));
+  app.replaceChildren(
+    h('div', { class: 'home-inner' },
+      S.user
+        ? topBar()
+        : h('header', { class: 'top-bar' },
+          link('/', wordmark(), { class: 'wordmark small', 'aria-label': 'Farcast' }),
+          h('nav', { class: 'top-nav' }, link('/signin', 'Sign in'))),
+      h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, "What's new")),
+      h('p', { class: 'hint changelog-intro' }, 'Every change to Farcast, newest first, so everyone at the table knows what changed and when.'),
+      list));
+  const entries = await loadChangelog();
+  if (!entries.length) return list.replaceChildren(h('li', { class: 'hint' }, "Couldn't load the change log. Try again in a moment."));
+  const lastSeen = store.get('changelogSeen', '');
+  list.replaceChildren(...entries.map((e, i) => {
+    const unseen = !lastSeen || e.date > lastSeen;
+    return h('li', { class: cls('changelog-entry', i === 0 && 'latest', unseen && 'is-new') },
+      h('span', { class: 'tl-node', 'aria-hidden': 'true' }),
+      h('div', { class: 'changelog-date' },
+        h('time', { datetime: e.date.replaceAll('.', '-') }, e.date),
+        h('span', { class: 'changelog-day' }, formatChangelogDate(e.date)),
+        i === 0 ? h('span', { class: 'pill latest-pill' }, 'Latest') : '',
+        unseen && lastSeen ? h('span', { class: 'pill new' }, 'New for you') : ''),
+      h('div', { class: 'changelog-card' },
+        h('p', { class: 'changelog-count' }, plural(e.changes.length, 'change')),
+        h('ul', { class: 'changelog-changes' }, e.changes.map((c) => h('li', null, c[0].toUpperCase() + c.slice(1))))));
+  }));
+  store.set('changelogSeen', entries[0].date);
 }
 
 async function signOut() {
@@ -222,17 +305,6 @@ async function signOut() {
   renderAuth('signin');
 }
 
-function renameDialog() {
-  prompt('Your name', [{ name: 'username', label: 'The name other players see', value: S.user.username }], 'Save', async (v) => {
-    try {
-      S.user = { ...S.user, ...(await api('/api/me', { method: 'PATCH', body: { username: v.username } })).user };
-      toast('Name updated.');
-      boot();
-    } catch (err) {
-      if (!(err instanceof SignedOut)) toast(err.message, 'error');
-    }
-  });
-}
 
 function renderWelcome() {
   const app = $('#app');
@@ -258,7 +330,7 @@ function renderWelcome() {
       h('h2', null, 'Welcome. What should other players call you?'),
       h('label', { class: 'field-label' }, 'Your name',
         h('input', { name: 'username', value: S.user.username, required: true, minlength: 3, maxlength: 24, autofocus: true, autocomplete: 'nickname' })),
-      h('p', { class: 'hint' }, 'This shows at the table and in game history. You can change it later.'),
+      h('p', { class: 'hint' }, "This shows at the table and in game history. Choose carefully: names can't be changed later."),
       status,
       h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, 'Continue')))));
   app.querySelector('input')?.select();
@@ -321,7 +393,7 @@ async function renderAuth(mode = 'signin') {
           ? h('label', { class: 'field-label' }, 'Confirm password',
             h('input', { name: 'confirm', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 }))
           : '',
-        creating ? h('p', { class: 'hint' }, 'Your name is what other players see. Passwords need at least 8 characters.') : '',
+        creating ? h('p', { class: 'hint' }, "Your name is what other players see, and it can't be changed later. Passwords need at least 8 characters.") : '',
         status,
         h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, creating ? 'Create account' : 'Sign in')),
         h('p', { class: 'hint' },
@@ -329,7 +401,8 @@ async function renderAuth(mode = 'signin') {
           h('a', {
             href: withNext(creating ? '/signin' : '/signup'),
             onclick: (e) => { e.preventDefault(); setPath(withNext(creating ? '/signin' : '/signup')); renderAuth(creating ? 'signin' : 'register'); },
-          }, creating ? 'Sign in' : 'Create an account')))));
+          }, creating ? 'Sign in' : 'Create an account'))),
+      h('p', { class: 'hint auth-footer' }, link('/changelog', "What's new in Farcast"))));
   app.querySelector('[autofocus]')?.focus();
 }
 
@@ -972,6 +1045,7 @@ function renderLobby() {
         h('header', { class: 'lobby-head' },
           link('/', wordmark(), { class: 'wordmark small', 'aria-label': 'Farcast home' }),
           h('div', { class: 'room-code' },
+            changelogLink(),
             h('span', { class: 'code-label' }, 'Room'),
             h('span', { class: 'code' }, S.code),
             h('button', {
@@ -1326,6 +1400,7 @@ function renderControls() {
       h('span', { class: 'control-label' }, 'Library'),
       h('div', { class: 'row wrap' },
         h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: () => send({ t: 'viewLibrary' }), title: 'Shortcut: F' }, 'Search'),
+        h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: lookAtTopCard, title: 'Shortcut: T' }, 'Top card'),
         h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: lookAtTop }, 'Look at top…'),
         h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: () => openModal({ type: 'shuffle' }), title: 'Shortcut: S' }, 'Shuffle'),
         h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, libraryMenu()); } }, 'More…'))),
@@ -1412,6 +1487,7 @@ function cardEl(c, ctx) {
   cardFace(c),
   c.faceDown && ctx.mine ? h('span', { class: 'peek-tag' }, 'Face down') : null,
   c.token ? h('span', { class: 'token-tag' }, 'Token') : null,
+  c.noUntap ? h('span', { class: 'nountap-tag', title: "Doesn't untap during untap" }, 'No untap') : null,
   Object.keys(c.counters).length
     ? h('span', { class: 'counters' }, Object.entries(c.counters).map(([kind, n]) =>
       h('button', {
@@ -1623,6 +1699,7 @@ function cardMenu(c, zone) {
     { label: c.tapped ? 'Untap' : 'Tap', hint: 'Click', run: () => tap(c) },
     c.def.backName ? { label: 'Transform', run: () => send({ t: 'transform', cardId: c.id }) } : null,
     { label: c.faceDown ? 'Turn face up' : 'Turn face down', run: () => send({ t: 'flip', cardId: c.id }) },
+    { label: c.noUntap ? 'Untaps normally again' : "Doesn't untap during untap", run: () => send({ t: 'noUntap', cardId: c.id }) },
     '-',
     { label: 'Add +1/+1 counter', run: () => send({ t: 'counter', cardId: c.id, kind: '+1/+1', delta: 1 }) },
     { label: 'Add −1/−1 counter', run: () => send({ t: 'counter', cardId: c.id, kind: '-1/-1', delta: 1 }) },
@@ -1651,12 +1728,18 @@ function libraryMenu() {
     { label: 'Draw several…', run: () => numberPrompt('Draw cards', 'How many?', 2, (n) => send({ t: 'draw', n })) },
     '-',
     { label: 'Search library', hint: 'F', run: () => send({ t: 'viewLibrary' }) },
+    { label: 'Look at the top card', hint: 'T', run: lookAtTopCard },
     { label: 'Look at the top cards…', run: lookAtTop },
     { label: 'Mill…', run: () => numberPrompt('Mill cards', 'How many?', 1, (n) => send({ t: 'mill', n })) },
     '-',
     { label: 'Shuffle…', hint: 'S', run: () => openModal({ type: 'shuffle' }) },
     { label: 'Mulligan (shuffle hand in, draw 7)', run: () => send({ t: 'mulligan' }) },
   ];
+}
+
+function lookAtTopCard() {
+  S.modal = null;
+  send({ t: 'viewLibrary', n: 1 });
 }
 
 function lookAtTop() {
@@ -1801,7 +1884,22 @@ function modalBody(m) {
       const lib = S.library;
       if (!lib) return { title: 'Library', content: h('p', { class: 'hint' }, 'Loading…') };
       const q = (m.filter ?? '').toLowerCase();
-      const cards = lib.cards.filter((c) => !q || c.def.name.toLowerCase().includes(q) || (c.def.typeLine ?? '').toLowerCase().includes(q));
+      const typeOf = (c) => c.def.typeLine ?? '';
+      const ofType = (c, t) => new RegExp(`\\b${t}\\b`).test(typeOf(c));
+      const cards = lib.cards.filter((c) =>
+        (!m.typeFilter || ofType(c, m.typeFilter)) &&
+        (!q || c.def.name.toLowerCase().includes(q) || typeOf(c).toLowerCase().includes(q)));
+      // One-tap type filters, showing only types that are actually in the library.
+      const TYPES = ['Land', 'Creature', 'Artifact', 'Enchantment', 'Instant', 'Sorcery', 'Planeswalker', 'Battle'];
+      const present = TYPES.map((t) => [t, lib.cards.filter((c) => ofType(c, t)).length]).filter(([, n]) => n > 0);
+      const chips = lib.mode === 'search' && present.length
+        ? h('div', { class: 'type-chips', role: 'group', 'aria-label': 'Filter by card type' },
+          h('button', { type: 'button', class: cls('chip', !m.typeFilter && 'on'), 'aria-pressed': String(!m.typeFilter), onclick: () => { m.typeFilter = null; renderModal(); } }, 'All', h('small', null, lib.cards.length)),
+          present.map(([t, n]) => h('button', {
+            type: 'button', class: cls('chip', m.typeFilter === t && 'on'), 'aria-pressed': String(m.typeFilter === t),
+            onclick: () => { m.typeFilter = m.typeFilter === t ? null : t; renderModal(); },
+          }, t, h('small', null, n))))
+        : '';
       const refresh = (keepTop) => {
         if (lib.mode === 'search') send({ t: 'viewLibrary', quiet: true });
         else {
@@ -1829,20 +1927,20 @@ function modalBody(m) {
         }, 'Position…'),
       ];
       return {
-        title: lib.mode === 'search' ? `Your library (${lib.total})` : `Top ${lib.n} of your library`,
+        title: lib.mode === 'search' ? `Your library (${lib.total})` : lib.n === 1 ? 'The top card of your library' : `Top ${lib.n} of your library`,
         content: h('div', null,
           lib.mode === 'search'
             ? h('input', {
-              class: 'filter-input', placeholder: 'Filter by name or type', value: m.filter ?? '', 'aria-label': 'Filter cards',
+              class: 'filter-input', placeholder: 'Search by name', value: m.filter ?? '', 'aria-label': 'Search by name',
               oninput: (e) => { m.filter = e.target.value; renderModal(); },
             })
-            : h('p', { class: 'hint' }, 'Leftmost is the top card. Your opponent only sees that you looked.'),
-          cardGrid(cards, buttons),
-          h('div', { class: 'row end' },
-            lib.mode === 'search'
-              ? h('button', { class: 'btn primary', type: 'button', onclick: () => { send({ t: 'shuffle' }); closeModal(); } }, 'Shuffle and close')
-              : null,
-            h('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Close'))),
+            : h('p', { class: 'hint' }, lib.n === 1 ? 'Your opponent only sees that you looked.' : 'Leftmost is the top card. Your opponent only sees that you looked.'),
+          chips,
+          cards.length ? cardGrid(cards, buttons) : h('p', { class: 'hint empty-filter' }, 'No cards match.'),
+          // Closing never shuffles unless you choose to.
+          h('div', { class: 'row end close-choices' },
+            h('button', { class: 'btn', type: 'button', onclick: () => { send({ t: 'shuffle' }); closeModal(); } }, 'Shuffle and close'),
+            h('button', { class: 'btn primary', type: 'button', onclick: closeModal }, 'Close without shuffling'))),
       };
     }
 
@@ -1979,6 +2077,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'n') nextStep();
   else if (k === 's') openModal({ type: 'shuffle' });
   else if (k === 'f') send({ t: 'viewLibrary' });
+  else if (k === 't') lookAtTopCard();
 });
 
 window.addEventListener('resize', closeMenu);

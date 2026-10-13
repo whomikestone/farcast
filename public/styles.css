@@ -439,12 +439,12 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
 /* sidebar */
 
 .side {
-  display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; overflow: hidden;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; /* preview, controls, log, chat */ min-height: 0; overflow: hidden;
   border-left: 1px solid var(--line);
   background: rgba(5, 14, 12, 0.55);
 }
 .preview { padding: 0.9rem 0.9rem 0.5rem; min-height: 3rem; }
-.preview-card { width: 100%; max-width: min(240px, 30vh * 0.718); margin: 0 auto; }
+.preview-card { width: 100%; max-width: min(240px, 23vh * 0.718); margin: 0 auto; }
 .preview-card img { display: block; width: 100%; border-radius: 4.5%; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
 .preview-card .text-face { --cw: 240px; aspect-ratio: 488 / 680; border-radius: 4.5%; }
 .preview-meta { margin: 0.5rem 0 0; font-size: 0.9rem; text-align: center; }
@@ -750,3 +750,134 @@ a.wordmark:hover .wm-far { color: #fff; }
 .h-result .pill { margin-right: 0.5rem; }
 .unranked-note { margin: 0.9rem 0 0; color: var(--bone-dim); }
 #seats .field-label { margin-top: 0.9rem; }
+
+/* ---------- what's new: pill on the right of the top bar ---------- */
+.whats-new {
+  position: relative; display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.28rem 0.75rem 0.28rem 0.7rem; border-radius: 999px; text-decoration: none;
+  border: 1px solid rgba(212, 166, 72, 0.45); background: rgba(212, 166, 72, 0.08);
+  color: var(--brass); font-size: 0.82rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.whats-new:hover, .whats-new:focus-visible { background: rgba(212, 166, 72, 0.18); border-color: var(--brass); }
+.whats-new .wn-date { color: var(--bone); font-variant-numeric: tabular-nums; opacity: 0.85; }
+.whats-new .wn-date:empty { display: none; }
+.whats-new .wn-date::before { content: '·'; margin-right: 0.45rem; color: rgba(212, 166, 72, 0.6); }
+.whats-new.has-new { background: var(--brass); border-color: var(--brass); color: var(--brass-ink); box-shadow: 0 0 0 4px rgba(212, 166, 72, 0.16); }
+.whats-new.has-new .wn-date { color: var(--brass-ink); }
+.whats-new.has-new .wn-date::before { color: rgba(36, 26, 6, 0.5); }
+.new-dot {
+  position: absolute; top: -0.2rem; right: -0.2rem; width: 0.6rem; height: 0.6rem; border-radius: 50%;
+  background: var(--lilac); box-shadow: 0 0 0 2px var(--felt-deep);
+}
+.room-code .whats-new { margin-right: 0.6rem; }
+
+/* ---------- what's new page: timeline ---------- */
+.changelog-intro { margin-top: 0.5rem; max-width: 40em; }
+.changelog { list-style: none; padding: 0 0 0 1.6rem; margin: 2rem 0 0; position: relative; display: grid; gap: 1.1rem; }
+.changelog::before {
+  content: ''; position: absolute; left: 0.42rem; top: 0.6rem; bottom: 0.6rem; width: 2px; border-radius: 2px;
+  background: linear-gradient(to bottom, var(--brass), rgba(212, 166, 72, 0.15));
+}
+.changelog-entry { position: relative; display: grid; grid-template-columns: minmax(9rem, 12.5rem) 1fr; gap: 1.25rem; align-items: start; }
+.tl-node {
+  position: absolute; left: -1.6rem; top: 0.55rem; width: 0.95rem; height: 0.95rem; border-radius: 50%;
+  background: var(--felt-deep); border: 2px solid rgba(212, 166, 72, 0.55);
+}
+.changelog-entry.latest .tl-node { background: var(--brass); border-color: var(--brass); box-shadow: 0 0 0 5px rgba(212, 166, 72, 0.18); }
+.changelog-date { display: grid; align-content: start; gap: 0.2rem; padding-top: 0.25rem; }
+.changelog-date time { font-family: var(--display); font-size: 1.55rem; line-height: 1.1; letter-spacing: 0.02em; color: var(--brass); font-variant-numeric: tabular-nums lining-nums; }
+.changelog-day { font-size: 0.82rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--lilac); }
+.changelog-date .pill { justify-self: start; margin-top: 0.4rem; }
+.pill.latest-pill { border-color: var(--brass); color: var(--brass-ink); background: var(--brass); }
+.pill.new { border-color: var(--lilac); color: var(--lilac); }
+.changelog-card {
+  background: rgba(8, 20, 17, 0.62); border: 1px solid var(--line); border-left: 3px solid rgba(212, 166, 72, 0.5);
+  border-radius: 10px; padding: 0.9rem 1.15rem 1rem;
+}
+.changelog-entry.latest .changelog-card { border-color: rgba(212, 166, 72, 0.45); border-left-color: var(--brass); background: rgba(212, 166, 72, 0.07); }
+.changelog-count { margin: 0 0 0.45rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone-dim); }
+.changelog-changes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.changelog-changes li { position: relative; padding-left: 1.1rem; line-height: 1.45; }
+.changelog-changes li::before { content: ''; position: absolute; left: 0; top: 0.55em; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--brass); }
+.auth-footer { text-align: center; margin-top: 1.25rem; }
+.auth-footer a { color: var(--brass); font-weight: 600; }
+@media (max-width: 620px) {
+  .changelog-entry { grid-template-columns: 1fr; gap: 0.5rem; }
+}
+
+/* ---------- library search: type filters ---------- */
+.type-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 0.2rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  border: 1px solid var(--line-strong); background: rgba(0, 0, 0, 0.2); color: var(--bone);
+  border-radius: 999px; padding: 0.3rem 0.75rem; font-weight: 600; font-size: 0.88rem;
+}
+.chip small { color: var(--bone-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
+.chip:hover { border-color: var(--bone-dim); }
+.chip.on { background: var(--brass); border-color: var(--brass); color: var(--brass-ink); }
+.chip.on small { color: rgba(36, 26, 6, 0.7); }
+.empty-filter { padding: 1.5rem 0; text-align: center; }
+.close-choices {
+  position: sticky; bottom: -1.3rem; z-index: 2;
+  border-top: 1px solid var(--line); padding: 0.9rem 0 1.3rem; margin: 1rem 0 -1.3rem;
+  background: var(--panel);
+}
+
+/* ---------- doesn't untap ---------- */
+.nountap-tag {
+  position: absolute; left: 50%; bottom: -0.55rem; transform: translateX(-50%);
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; pointer-events: none;
+  padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--lilac); color: #1b1630;
+}
+.card.tapped .nountap-tag { bottom: auto; top: 50%; transform: translate(-50%, -50%) rotate(-90deg); box-shadow: 0 0 0 2px rgba(13, 29, 26, 0.85); }
+
+span.who-am-i { cursor: default; }
+
+/* Narrow screens: the top bar wraps, so the divider before your name would dangle at the start of a line. */
+@media (max-width: 560px) {
+  .top-nav { gap: 0.7rem 0.9rem; }
+  .who-am-i { border-left: 0; padding-left: 0; }
+}
+
+/* ---------- playmat room (2026.10.12) ----------
+   Both halves of the table now get the same height. The hand sits in its own short strip along the
+   bottom instead of inside your half: cards show their top part and rise fully on hover, with the
+   rest tucked under your player bar. Player bars and the center line are slimmer. */
+
+/* Let the bars, playmats, center line, and hand share one grid so the two playmats can be equal. */
+.table { grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto auto; }
+.seat.opp, .seat.mine { display: contents; }
+
+/* Slimmer player bars with a smaller life total on the same line. */
+.seat-bar { padding: 0.2rem 1rem; min-height: 0; position: relative; z-index: 6; }
+.seat.mine .seat-bar { background: #0e1e1b; }
+.life-total { font-size: clamp(1.9rem, 2.9vw, 2.7rem); min-width: 2.1ch; }
+.life-btn { width: 1.65rem; height: 1.65rem; font-size: 1.05rem; }
+.life-delta { top: -0.35rem; right: -1.4rem; font-size: 0.9rem; }
+
+/* Thinner center line. */
+.midline { height: 1.6rem; }
+.midline-cta { padding: 0.12rem 0.8rem; font-size: 0.88rem; }
+.midline-result { padding-top: 0.12rem; padding-bottom: 0.12rem; }
+
+/* The hand: a short strip; each card shows its top 60% and rises fully on hover or focus. */
+.hand {
+  height: calc(var(--ch) * 0.6 + 0.45rem);
+  padding: 0.45rem 1rem 0;
+  align-items: flex-start;
+  overflow: visible;
+  z-index: 5;
+}
+.hand .card:hover, .hand .card:focus-visible { transform: translateY(-42%); z-index: 7; }
+.hand-empty { margin: 0.4rem auto 0; }
+
+/* Playmat margins: a little tighter at the top and bottom. */
+.field { margin: 0.3rem 0.6rem; }
+
+/* Sidebar: a little tighter so the game log keeps several lines on shorter screens. */
+.preview { padding: 0.7rem 0.9rem 0.3rem; }
+.preview-meta { margin-top: 0.3rem; }
+.controls .row { margin-top: 0.4rem; }
+.control-group { margin-top: 0.6rem; }
+.controls .check { margin-top: 0.5rem; }

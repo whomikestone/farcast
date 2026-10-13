@@ -24,6 +24,10 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Records in the lobby: you vs player (all decks), this deck vs player, deck vs deck
 - ✅ Results need agreement: claiming a win waits for the opponent to confirm; admitting defeat is immediate
 - ✅ Unranked games: kept in history, never counted toward records
+- ✅ What's new page (change log), names fixed once chosen, type filters in library search,
+  close without shuffling, "doesn't untap," one-click top card
+- ✅ More playmat room: both halves equal height (about 3 cards tall on a laptop), hand in its own
+  strip, slimmer player bars
 
 **To finish**
 - ✅ Production D1 database created and migrated

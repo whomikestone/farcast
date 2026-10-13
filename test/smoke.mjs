@@ -78,6 +78,16 @@ const P = (c, m) => m.state.players.find((p) => p.id === c.you);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ================= accounts =================
+const cl = await fetch(`${BASE}/api/changelog`);
+assert.equal(cl.status, 200, 'the change log is public');
+const { entries } = await cl.json();
+assert.ok(entries.length >= 3);
+assert.match(entries[0].date, /^\d{4}\.\d{2}\.\d{2}$/);
+assert.ok(entries.every((e, i) => i === 0 || e.date < entries[i - 1].date), 'newest first');
+assert.ok(entries.every((e) => e.changes.length >= 1), 'each day lists its changes');
+assert.ok(entries.at(-1).changes[0].startsWith('First playable version'));
+step(`change log: public, ${entries.length} days, newest first, split into individual changes`);
+
 assert.equal((await fetch(`${BASE}/api/decks`)).status, 401);
 assert.equal((await fetch(`${BASE}/api/rooms`, { method: 'POST' })).status, 401);
 const alice = new Account(`alice_${run}`);
@@ -120,6 +130,9 @@ assert.equal(meG.needsName, true, 'new Google users choose their name');
 assert.equal((await gina.call('/api/me', { method: 'PATCH', body: { username: alice.username } })).status, 400, 'names stay unique');
 const renamedG = (await gina.call('/api/me', { method: 'PATCH', body: { username: `Gina ${run}` } })).data.user;
 assert.equal(renamedG.username, `Gina ${run}`);
+const again = await gina.call('/api/me', { method: 'PATCH', body: { username: `Gina Again ${run}` } });
+assert.equal(again.status, 403, 'a name can only be chosen once');
+assert.equal((await alice.call('/api/me', { method: 'PATCH', body: { username: `Alice2 ${run}` } })).status, 403, 'password accounts keep their sign-up name');
 const g2 = await google('gina');
 const gina2 = new Account('Gina'); gina2.cookie = g2.session;
 meG = (await gina2.call('/api/me')).data.user;
@@ -129,7 +142,7 @@ assert.match(decodeURIComponent((await google('gina', { badState: true })).locat
 const strangerTry = await google('stranger');
 assert.match(decodeURIComponent(strangerTry.location), /invite list/);
 assert.equal(strangerTry.session, undefined);
-step('Google: PKCE redirect, account created on first sign-in, name chosen once, forged state and uninvited emails refused');
+step('Google: PKCE redirect, account created on first sign-in, name chosen once then locked, forged state and uninvited emails refused');
 
 // ================= Cloudflare Access =================
 const viaAccess = (token) => fetch(`${BASE}/api/me`, { headers: { 'Cf-Access-Jwt-Assertion': token } });
@@ -277,8 +290,24 @@ const bView = JSON.stringify(b.messages.slice(-6));
 assert.ok(!bView.includes(third.id), 'opponent never sees the card');
 step('library positions: 3rd from top, 2nd from bottom, reorder within, past the end; card stays hidden');
 
+// "doesn't untap": stays tapped through Untap all and the untap step
+const held = a.mine.battlefield[0];
+await a.act({ t: 'tap', cardId: held.id, tapped: true }, (m) => P(a, m).battlefield.find((c) => c.id === held.id)?.tapped);
+await a.act({ t: 'noUntap', cardId: held.id }, (m) => P(a, m).battlefield.find((c) => c.id === held.id)?.noUntap === true);
+const other = a.mine.battlefield.find((c) => c.id !== held.id);
+await a.act({ t: 'tap', cardId: other.id, tapped: true }, (m) => P(a, m).battlefield.find((c) => c.id === other.id)?.tapped);
+await a.act({ t: 'untapAll' }, (m) => !P(a, m).battlefield.find((c) => c.id === other.id)?.tapped);
+assert.equal(a.mine.battlefield.find((c) => c.id === held.id).tapped, true, 'untap all skips it');
+assert.match(a.state.log.at(-1).text, /1 stayed tapped/);
+await a.act({ t: 'tap', cardId: held.id, tapped: false }, (m) => !P(a, m).battlefield.find((c) => c.id === held.id)?.tapped);
+step('"doesn\'t untap": skipped by untap all, still untappable by hand');
+
 const first = a.state.turn.activeId === a.you ? a : b;
+if (first === a) {
+  await a.act({ t: 'tap', cardId: held.id, tapped: true }, (m) => P(a, m).battlefield.find((c) => c.id === held.id)?.tapped);
+}
 await first.act({ t: 'beginTurn' }, (m) => m.state.turn.begun);
+if (first === a) assert.equal(a.mine.battlefield.find((c) => c.id === held.id).tapped, true, 'the untap step skips it too');
 await first.act({ t: 'passTurn' }, (m) => m.state.turn.number === 2);
 step('counters, copies, tokens, mill, graveyard shuffle, begin turn, pass turn');
 

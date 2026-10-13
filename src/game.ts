@@ -32,6 +32,7 @@ export interface Card {
   x: number; // 0..1 across the owner's battlefield
   y: number; // 0..1, 0 = edge nearest the centre line
   token: boolean;
+  noUntap?: boolean; // "doesn't untap during your untap step"
 }
 
 export interface DeckList {
@@ -422,12 +423,18 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       if (!state.turn || state.turn.activeId !== me.id) return { changed: false, error: "It isn't your turn." };
       if (state.turn.begun) return { changed: false, error: 'You already started this turn.' };
       let untapped = 0;
-      for (const c of me.zones.battlefield) if (c.tapped) { c.tapped = false; untapped++; }
+      let stayed = 0;
+      for (const c of me.zones.battlefield) {
+        if (!c.tapped) continue;
+        if (c.noUntap) { stayed++; continue; }
+        c.tapped = false;
+        untapped++;
+      }
       // The player who goes first skips their first draw.
       const skipDraw = state.turn.number === 1;
       const drew = skipDraw ? 0 : draw(state, me, 1);
       state.turn.begun = true;
-      const parts = [`untapped ${untapped}`, 'upkeep', skipDraw ? 'no draw on the first turn' : drew ? 'drew a card' : 'could not draw (library empty)'];
+      const parts = [`untapped ${untapped}${stayed ? ` (${stayed} stayed tapped)` : ''}`, 'upkeep', skipDraw ? 'no draw on the first turn' : drew ? 'drew a card' : 'could not draw (library empty)'];
       log(state, `began their turn: ${parts.join(', ')}`, me);
       return { changed: true };
     }
@@ -463,6 +470,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       if (from === 'battlefield' && to !== 'battlefield') {
         card.tapped = false;
         card.counters = {};
+        card.noUntap = false;
         card.transformed = false;
       }
       card.faceDown = faceDownAfter;
@@ -503,9 +511,23 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
     }
     case 'untapAll': {
       let n = 0;
-      for (const c of me.zones.battlefield) if (c.tapped) { c.tapped = false; n++; }
+      let stayed = 0;
+      for (const c of me.zones.battlefield) {
+        if (!c.tapped) continue;
+        if (c.noUntap) { stayed++; continue; }
+        c.tapped = false;
+        n++;
+      }
       if (!n) return { changed: false };
-      log(state, `untapped ${n} permanent${n === 1 ? '' : 's'}`, me);
+      log(state, `untapped ${n} permanent${n === 1 ? '' : 's'}${stayed ? ` (${stayed} stayed tapped)` : ''}`, me);
+      return { changed: true };
+    }
+    case 'noUntap': {
+      const loc = findCard(me, a.cardId);
+      if (!loc || loc.zone !== 'battlefield') return { changed: false };
+      loc.card.noUntap = !loc.card.noUntap;
+      const n = loc.card.faceDown ? 'a face-down card' : cardName(loc.card);
+      log(state, loc.card.noUntap ? `marked ${n} as "doesn't untap"` : `cleared "doesn't untap" on ${n}`, me);
       return { changed: true };
     }
     case 'flip': {
@@ -700,7 +722,7 @@ function chat(state: GameState, me: Player, a: any): ActionResult {
 // ---------- what each player is allowed to see ----------
 
 function publicCard(c: Card) {
-  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token };
+  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token, noUntap: !!c.noUntap };
 }
 
 function hiddenCard(c: Card) {

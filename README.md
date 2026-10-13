@@ -56,6 +56,12 @@ git remote add origin https://github.com/<you>/farcast.git
 git push -u origin main
 ```
 
+## Change log
+
+`CHANGELOG.md` is the single record of changes, shown to players at `/changelog` ("What's new").
+Add one line per day, newest at the top, in the form `YYYY.MM.DD — first change; second change`.
+It ships with each deploy, so pushing an updated file updates the page.
+
 ## Fonts
 
 Gloock (display: wordmark, deck names, life totals) and Hanken Grotesk (everything else), both
@@ -90,8 +96,8 @@ Access or Google is on, consider turning it off.
 
 **Rate limiting** is handled by your own Cloudflare rules; see "Addresses" below for the paths.
 
-New Google and Access users choose the name other players see on their first visit. Anyone can
-change their name later by clicking it at the top of the page.
+New Google and Access users choose the name other players see on their first visit. Names are
+fixed once chosen, so game history and records always match.
 
 ## Addresses
 
@@ -104,6 +110,7 @@ Screens people see (all served by the same page):
 | `/` | Start or join a game |
 | `/decks`, `/decks/new`, `/decks/<id>` | Your decks, create or edit a deck |
 | `/r/<CODE>` | A game room (lobby and table) |
+| `/changelog` | What's new: every change, newest first (public, no sign-in needed) |
 
 Every request the browser sends, for writing your own Cloudflare rules. Each action has its own
 path; where a path is shared, the method tells them apart.
@@ -111,6 +118,7 @@ path; where a path is shared, the method tells them apart.
 | Method and path | What it does |
 | --- | --- |
 | `GET /api/auth/config` | Which sign-in methods are on |
+| `GET /api/changelog` | The change log for the What's new page (public) |
 | `POST /api/auth/login` | Name + password sign-in |
 | `POST /api/auth/register` | New name + password account |
 | `POST /api/auth/logout` | Sign out |
@@ -208,6 +216,10 @@ so a player can't push arbitrary images into their opponent's browser.
 | Card menu (counters, copy, transform, move) | Right-click, or long-press on touch |
 | Draw | Click your library, or press D |
 | Search your library | Sidebar → Library → Search, the ⋯ button on your library, or press F |
+| Filter a search by type | The Land / Creature / … buttons above the results |
+| Close a search | "Close without shuffling" (or Esc), or "Shuffle and close" |
+| Look at the top card | Sidebar → Library → Top card, or press T |
+| Keep a card tapped through untap | Card menu → "Doesn't untap during untap" (shows a "No untap" marker) |
 | Look at the top cards, mill, shuffle, mulligan | Sidebar → Library, or the ⋯ button on your library |
 | Put a card into your library at a position | Card menu → "Put into library at position…" (e.g. 3rd from the top), or Position… in any card viewer |
 | Untap all | U |

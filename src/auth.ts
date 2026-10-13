@@ -112,7 +112,11 @@ export async function logout(env: Env, request: Request, secure: boolean): Promi
   return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
 }
 
+// Names are chosen once (at sign-up, or on the welcome screen for Google/Access users) and then fixed,
+// so game history and records always show the same name.
 export async function rename(env: Env, userId: string, username: unknown): Promise<User | string> {
+  const row = await env.DB.prepare('SELECT name_chosen FROM users WHERE id = ?').bind(userId).first<{ name_chosen: number }>();
+  if (row?.name_chosen !== 0) return "Names can't be changed once chosen.";
   if (!validUsername(username)) return USERNAME_RULES;
   const taken = await env.DB.prepare('SELECT 1 FROM users WHERE username = ? AND id <> ?').bind(username, userId).first();
   if (taken) return 'That name is taken.';

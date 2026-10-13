@@ -2,6 +2,14 @@ import { GameRoom } from './game-room';
 import { fetchDeckFromUrl, parseDeckText, parseTwoBoxes, resolveDeck } from './deck';
 import { authConfig, createSession, currentUser, googleCallback, googleStart, login, logout, register, rename, type User } from './auth';
 import { createDeck, getDeck, listDecks, matchupRecord, normalizeDeck, retireDeck, updateDeck } from './decks';
+import changelogText from '../CHANGELOG.md';
+
+// "2026.10.11 — First change; second change" → { date, changes: [...] }, newest first as written.
+const CHANGELOG = changelogText
+  .split(/\r?\n/)
+  .map((line) => line.match(/^(\d{4}\.\d{2}\.\d{2})\s+[—–-]\s+(.+)$/))
+  .filter((m): m is RegExpMatchArray => !!m)
+  .map((m) => ({ date: m[1], changes: m[2].split(/;\s*/).map((c) => c.trim().replace(/\.$/, '')).filter(Boolean) }));
 
 export { GameRoom };
 
@@ -54,6 +62,12 @@ export default {
     // ---------- accounts ----------
     const cfg = authConfig(env);
     if (path === '/api/auth/config') return json(cfg);
+    // Public on purpose: anyone can see what changed and when.
+    if (path === '/api/changelog' && method === 'GET') {
+      return new Response(JSON.stringify({ entries: CHANGELOG }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+      });
+    }
     if (path === '/api/auth/register' && method === 'POST') {
       if (!cfg.password) return json({ error: 'Password accounts are turned off here.' }, 403);
       const { username, password } = await body();
@@ -88,7 +102,8 @@ export default {
     if (path === '/api/me' && method === 'PATCH') {
       const b = await body();
       const updated = await rename(env, user.id, typeof b.username === 'string' ? b.username.trim() : b.username);
-      return typeof updated === 'string' ? json({ error: updated }, 400) : json({ user: updated });
+      if (typeof updated === 'string') return json({ error: updated }, updated.startsWith("Names can't") ? 403 : 400);
+      return json({ user: updated });
     }
 
     // ---------- decks ----------

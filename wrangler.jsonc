@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "farcast",
   "main": "src/index.ts",
+  // Lets the Worker read CHANGELOG.md as text, so the What's new page and the repo share one file.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "compatibility_date": "2025-09-01",
   "assets": {
     "directory": "./public",
