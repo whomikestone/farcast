@@ -34,7 +34,10 @@
   --wound: #ee8a76;
   --heal: #93d6a3;
 
-  --cw: clamp(50px, 4.9vw, 92px);
+  --table-scale: 1;
+  --hand-scale: 1.2;
+  --cw: calc(clamp(50px, 4.9vw, 92px) * var(--table-scale));
+  --hw: calc(clamp(50px, 4.9vw, 92px) * var(--hand-scale));
   --ch: calc(var(--cw) * 1.396);
   --card-r: calc(var(--cw) * 0.055);
 
@@ -881,3 +884,66 @@ span.who-am-i { cursor: default; }
 .controls .row { margin-top: 0.4rem; }
 .control-group { margin-top: 0.6rem; }
 .controls .check { margin-top: 0.5rem; }
+
+/* ---------- view settings: card sizes and preview size (per browser) ---------- */
+/* Hand cards use their own size; setting --cw/--ch on them resizes the card and its text together. */
+.hand { --hh: calc(var(--hw) * 1.396); height: calc(var(--hh) * 0.6 + 0.45rem); }
+.hand .card { --cw: var(--hw); --ch: var(--hh); margin-left: calc(var(--hw) * -0.18 * min(1, max(0, (var(--n) - 7) / 5))); }
+.hand .card:first-child { margin-left: 0; }
+
+body.preview-S .preview-card { max-width: min(200px, 20vh * 0.718); }
+body.preview-M .preview-card { max-width: min(260px, 27vh * 0.718); }
+body.preview-L .preview-card { max-width: min(350px, 44vh * 0.718); }
+body.preview-L .board { grid-template-columns: 1fr clamp(300px, 27vw, 390px); }
+
+.view-settings { display: grid; gap: 0.6rem; }
+.view-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
+.view-row .segmented button { padding: 0.3rem 0.9rem; }
+
+/* ---------- three-digit counters ---------- */
+.counter.big { font-size: 0.64rem; padding: 0.08rem 0.35rem; }
+
+/* ---------- reveal and put-on-bottom (look at the top cards) ---------- */
+.order-arrows { display: inline-flex; gap: 0.2rem; }
+.btn.tiny.reveal-btn { border-color: var(--lilac); color: var(--lilac); }
+.top-actions { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-top: 1.1rem; padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.16); }
+.top-action-group { display: grid; gap: 0.45rem; align-content: start; max-width: 26rem; }
+.top-action-group .hint { margin: 0; }
+
+/* Cards an opponent revealed: over the top of the table, never blocking the whole screen. */
+#reveal-root { position: fixed; top: 4.2rem; left: 50%; transform: translateX(-50%); z-index: 1400; max-width: min(92vw, 900px); }
+.reveal-panel {
+  background: rgba(13, 29, 26, 0.96); border: 1px solid var(--lilac); border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); padding: 0.6rem 0.8rem 0.85rem;
+}
+.reveal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.92rem; margin-bottom: 0.5rem; }
+.reveal-head b { color: var(--lilac); }
+.reveal-cards { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.2rem; }
+.reveal-card { flex: none; width: 118px; }
+.reveal-card img, .reveal-card .text-face { display: block; width: 100%; aspect-ratio: 488 / 680; border-radius: 4.75%; }
+.reveal-card .text-face { --cw: 118px; }
+
+/* ---------- hand magnification (like the Mac Dock) ---------- */
+.hand.magnify .card { transform-origin: 50% 100%; transition: transform 0.11s ease-out; will-change: transform; }
+/* The simple hover lift stays for keyboards, touch screens, and reduced motion. */
+.hand.magnify .card:hover { transform: none; }
+.hand.magnify .card[style*="translateY"]:hover { z-index: 120; }
+
+/* ---------- changed power/toughness ---------- */
+.pt-badge {
+  position: absolute; right: 4%; bottom: 3.5%; pointer-events: none;
+  min-width: 2.2em; text-align: center; padding: 0.08rem 0.35rem; border-radius: 5px;
+  font: 700 calc(var(--cw) * 0.15) / 1.1 var(--ui); font-variant-numeric: tabular-nums;
+  background: var(--brass); color: var(--brass-ink); box-shadow: 0 0 0 2px rgba(13, 29, 26, 0.85);
+}
+.card.tapped .pt-badge { transform: rotate(-90deg); }
+.tf-pt.changed { color: #8a5a00; }
+.preview-pt { color: var(--brass); font-weight: 600; }
+
+/* ---------- edit token: counters group ---------- */
+.prompt-group {
+  margin: 1rem 0 0; padding: 0.4rem 0.9rem 0.9rem; border: 1px solid var(--line); border-radius: 8px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.9rem;
+}
+.prompt-group legend { padding: 0 0.35rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone-dim); }
+.prompt-group .field-label { margin-top: 0.6rem; font-size: 0.9rem; }

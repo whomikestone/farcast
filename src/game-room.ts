@@ -106,6 +106,11 @@ export class GameRoom extends DurableObject<Env> {
     const res = applyAction(s, att.playerId, msg);
     if (res.error) this.send(ws, { t: 'error', message: res.error });
     if (res.private) this.send(ws, res.private);
+    if (res.announce) {
+      for (const w of this.ctx.getWebSockets()) {
+        if ((w.deserializeAttachment() as Attachment | null)?.playerId) this.send(w, res.announce);
+      }
+    }
     if (res.changed) {
       s.lastActivity = Date.now();
       if (res.ended) await this.archive();

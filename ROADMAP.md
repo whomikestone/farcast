@@ -1,5 +1,9 @@
 # Roadmap
 
+**With every change** (standing rule):
+- Add it to `CHANGELOG.md` (the What's new page), dated in Pacific time.
+- If it adds or changes a control or shortcut, update the controls guide (once built) and the README's controls table.
+
 Milestones in order. Each one should be usable on its own before the next starts.
 Status: ✅ done · 🟡 in progress · ⬜ not started
 
@@ -29,16 +33,39 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ More playmat room: both halves equal height (about 3 cards tall on a laptop), hand in its own
   strip, slimmer player bars
 
+**Next up (from play-testing)**
+- ✅ Reveal cards to your opponent: from the top of your library, a card in hand, or your whole hand
+- ✅ Put the rest on the bottom: in a random order, or arranged with ← →
+- ✅ Change starting life (40/30/20) in the lobby
+
+*Easy*
+- ⬜ Controls and shortcuts guide in the app: every keyboard shortcut (D, U, N, S, F, T, Esc…) and mouse action
+  (double-click to play, click to tap, right-click for menus, shift-click or right-click a counter badge to remove one,
+  Alt while dropping to play face down, hovering the hand to magnify…). Opened with the ? key or a "Controls" button in
+  the sidebar, readable without leaving the game, and linked from the README.
+- ✅ Card size setting: Small / Medium / Large, separately for your hand and the table (View…)
+- ✅ Larger hover preview in the sidebar, with a size setting
+- ✅ Counters up to 999
+
+*Medium*
+- ⬜ Point at a card: any visible card glows on both screens for a few seconds, with a log line
+- ⬜ Sketch pad under your library: named counters you create (Squirrels, Experience, Storm…) plus a free-form note (e.g. floating mana); visible to both players
+- ⬜ Token revamp: stacks ("Squirrel ×37") with add/remove and partial tapping (splits into tapped and untapped stacks); quick picker for common tokens with Scryfall token art
+
 **To finish**
 - ✅ Production D1 database created and migrated
-- ✅ Git repository with a typecheck workflow; deploys configured for Cloudflare Workers Builds
-- ⬜ Push to GitHub and connect the repo in Workers & Pages (first deploy)
-- ⬜ Add the custom domain
-- ⬜ Confirm real Scryfall card images and commander playmats on the deployed site
-- ⬜ Set up sign-in: Access policy with your group's emails, and/or Google OAuth client
-- ⬜ Add Cloudflare rate limiting rules for `/api/auth/*` and `/api/decks/resolve`
-- ⬜ Play a full real game with a friend and collect what felt clunky
+- ✅ Git repository with a typecheck workflow
+- ✅ First deploy to Cloudflare (2026.10.11)
+- ✅ Real Scryfall card images and commander playmats confirmed on the live site
+- ✅ Played real games with a friend
 - ✅ Choose the app's name: Farcast (check trademarks before any public launch; it's close to "Farcaster," an unrelated social network)
+- ✅ Automatic deploys on push (repo reconnected in Workers & Pages → farcast → Settings → Build)
+- ✅ 2026.10.12 changes deployed (What's new, library updates, playmat room)
+- ⬜ Push the 2026.10.17 changes (reveal, put the rest on the bottom, sizes, magnification, token editing)
+- ✅ Custom domain: farcast.mstone.io
+- ✅ workers.dev address disabled (the app is only reachable at farcast.mstone.io)
+- ⬜ Set up sign-in: Access policy with your group's emails, and/or Google OAuth client
+- ✅ Cloudflare rate limiting rules
 
 ---
 

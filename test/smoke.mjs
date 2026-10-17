@@ -302,6 +302,75 @@ assert.match(a.state.log.at(-1).text, /1 stayed tapped/);
 await a.act({ t: 'tap', cardId: held.id, tapped: false }, (m) => !P(a, m).battlefield.find((c) => c.id === held.id)?.tapped);
 step('"doesn\'t untap": skipped by untap all, still untappable by hand');
 
+// reveal: opponent gets the card faces (no ids); only hand or library cards can be revealed
+const toReveal = a.mine.hand[0];
+const seen = b.next('revealed');
+a.send({ t: 'reveal', cardIds: [toReveal.id] });
+const rv = await seen;
+assert.equal(rv.cards[0].def.name, toReveal.def.name);
+assert.ok(!JSON.stringify(rv).includes(toReveal.id), 'revealed cards carry no ids');
+await wait(150);
+assert.match(a.state.log.at(-1).text, new RegExp(`revealed ${toReveal.def.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} from their hand`));
+a.send({ t: 'reveal', cardIds: [a.mine.battlefield[0].id] });
+assert.match((await a.next('error')).message, /hand or library/);
+b.send({ t: 'reveal', cardIds: [toReveal.id] });
+assert.match((await b.next('error')).message, /hand or library/);
+step('reveal: opponent sees the card face only; battlefield and other players\' cards refused');
+
+// put the rest on the bottom, in a chosen and then a random order
+const top3 = (await peek(3));
+await a.act({ t: 'bottomMany', cardIds: top3, random: false }, () => true);
+let lib3 = await peek();
+assert.deepEqual(lib3.slice(-3), top3, 'chosen order: last one ends up at the very bottom');
+const next3 = lib3.slice(0, 3);
+await a.act({ t: 'bottomMany', cardIds: next3, random: true }, () => true);
+lib3 = await peek();
+assert.deepEqual([...lib3.slice(-3)].sort(), [...next3].sort(), 'random order: same cards, on the bottom');
+assert.match(a.state.log.at(-1).text, /3 cards on the bottom of their library in a random order/);
+step('put the rest on the bottom: chosen order kept, random order shuffled');
+
+// counters up to 999
+const ctr = a.mine.battlefield[0];
+await a.act({ t: 'counter', cardId: ctr.id, kind: 'charge', delta: 999 }, (m) => P(a, m).battlefield.find((c) => c.id === ctr.id)?.counters.charge === 999);
+await a.act({ t: 'counter', cardId: ctr.id, kind: 'charge', delta: 5 }, () => true);
+assert.equal(a.mine.battlefield.find((c) => c.id === ctr.id).counters.charge, 999, 'capped at 999');
+step('counters go up to 999');
+
+// edit tokens; set power/toughness
+const findA = (id) => a.mine.battlefield.find((c) => c.id === id);
+const soldier = a.mine.battlefield.find((c) => c.token && c.def.name === 'Soldier');
+await a.act({ t: 'editToken', cardId: soldier.id, name: 'Knight', pt: '2/2', typeLine: 'Creature — Knight' }, (m) => P(a, m).battlefield.find((c) => c.id === soldier.id)?.def.name === 'Knight');
+assert.equal(findA(soldier.id).def.pt, '2/2');
+assert.equal(findA(soldier.id).def.typeLine, 'Token Creature — Knight');
+assert.ok(a.mine.battlefield.some((c) => c.token && c.def.name === 'Soldier'), 'the other Soldier is unchanged');
+assert.match(a.state.log.at(-1).text, /changed token Soldier 1\/1 to Knight 2\/2/);
+await a.act({ t: 'editToken', cardId: soldier.id, name: 'Knight', pt: '2/2', counters: { '+1/+1': 3, shield: 1 } }, (m) => P(a, m).battlefield.find((c) => c.id === soldier.id)?.counters['+1/+1'] === 3);
+assert.deepEqual(findA(soldier.id).counters, { '+1/+1': 3, shield: 1 });
+assert.match(a.state.log.at(-1).text, /counters: \+1\/\+1 ×3, shield ×1/);
+await a.act({ t: 'editToken', cardId: soldier.id, name: 'Knight', pt: '2/2', counters: { '+1/+1': 0, shield: 1, charge: 1500 } }, (m) => P(a, m).battlefield.find((c) => c.id === soldier.id)?.counters.charge === 999);
+assert.deepEqual(findA(soldier.id).counters, { shield: 1, charge: 999 }, '0 removes a counter; counts cap at 999');
+// Use a card of its own, so the "doesn't untap" card from earlier isn't disturbed.
+const fresh = a.mine.hand[0];
+await a.act({ t: 'move', cardId: fresh.id, to: 'battlefield' }, (m) => P(a, m).battlefield.some((c) => c.id === fresh.id));
+const original = findA(fresh.id);
+await a.act({ t: 'copy', cardId: original.id }, () => true);
+const copyCard = a.mine.battlefield.at(-1);
+await a.act({ t: 'editToken', cardId: copyCard.id, name: copyCard.def.name, pt: '7/7' }, (m) => P(a, m).battlefield.find((c) => c.id === copyCard.id)?.pt === '7/7');
+assert.equal(findA(original.id).pt, null, "editing a copy doesn't touch the original");
+a.send({ t: 'editToken', cardId: original.id, name: 'Nope' });
+assert.match((await a.next('error')).message, /Only tokens/);
+await a.act({ t: 'setPT', cardId: original.id, pt: '5/5' }, (m) => P(a, m).battlefield.find((c) => c.id === original.id)?.pt === '5/5');
+await wait(150);
+assert.equal(b.opp.battlefield.find((c) => c.id === original.id).pt, '5/5', 'opponent sees the new power/toughness');
+b.send({ t: 'setPT', cardId: original.id, pt: '1/1' });
+assert.match((await b.next('error')).message, /Only cards on the battlefield/);
+await a.act({ t: 'setPT', cardId: original.id, pt: '' }, (m) => P(a, m).battlefield.find((c) => c.id === original.id)?.pt === null);
+await a.act({ t: 'setPT', cardId: original.id, pt: '9/9' }, () => true);
+await a.act({ t: 'move', cardId: original.id, to: 'hand' }, (m) => P(a, m).hand.some((c) => c.id === original.id));
+await a.act({ t: 'move', cardId: original.id, to: 'battlefield' }, (m) => P(a, m).battlefield.some((c) => c.id === original.id));
+assert.equal(findA(original.id).pt, null, 'leaving the battlefield resets it');
+step("edit tokens (copies stay independent); set and reset power/toughness; it resets when the card leaves; opponents can't change it");
+
 const first = a.state.turn.activeId === a.you ? a : b;
 if (first === a) {
   await a.act({ t: 'tap', cardId: held.id, tapped: true }, (m) => P(a, m).battlefield.find((c) => c.id === held.id)?.tapped);
@@ -387,6 +456,9 @@ const { data: { code: code2 } } = await alice.call('/api/rooms', { method: 'POST
 const a2 = new Client(alice), b2 = new Client(bob);
 await a2.connect(code2); await b2.connect(code2);
 assert.equal(a2.state.ranked, false, 'room created unranked');
+await b2.act({ t: 'setStartingLife', life: 30 }, (m) => m.state.startingLife === 30);
+b2.send({ t: 'setStartingLife', life: 25 });
+assert.match((await b2.next('error')).message, /20, 30, or 40/);
 await a2.act({ t: 'selectDeck', deckId: aDeck.id }, (m) => P(a2, m).deck?.id === aDeck.id);
 await b2.act({ t: 'selectDeck', deckId: v2.data.id }, (m) => P(b2, m).deck?.id === v2.data.id);
 a2.send({ t: 'ready', ready: true }); b2.send({ t: 'ready', ready: true });
@@ -405,7 +477,7 @@ assert.equal((await alice.call('/api/decks')).data.decks.find((d) => d.id === aD
 const hist = (await alice.call('/api/games')).data.games;
 assert.equal(hist[0].ranked, 0, 'history marks it unranked');
 assert.equal(hist.filter((g) => g.ranked === 1).length, 3);
-step('unranked: chosen at creation or in the lobby (switching resets ready), ends without confirmation, kept in history, never counted');
+step('lobby: starting life and ranked/unranked can be changed (both reset ready); unranked ends without confirmation, kept in history, never counted');
 a2.ws.close(); b2.ws.close();
 
 a.ws.close();

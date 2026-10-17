@@ -932,6 +932,9 @@ function onMessage(msg) {
       if (!S.modal || S.modal.type !== 'library') S.modal = { type: 'library', filter: '' };
       renderModal();
       break;
+    case 'revealed':
+      if (msg.by !== S.you) showReveal(msg);
+      break;
     case 'error':
       toast(msg.message, 'error');
       break;
@@ -1088,12 +1091,14 @@ function renderSeats() {
   const isRanked = s.ranked !== false;
   $('#seats').replaceChildren(
     h('ul', { class: 'seat-list' }, seats),
-    h('p', { class: 'hint' }, `Starting life: ${s.startingLife}`),
+    h('div', { class: 'field-label' }, 'Starting life',
+      segmented('Starting life', [[40, '40'], [30, '30'], [20, '20']], s.startingLife, (v) => send({ t: 'setStartingLife', life: v }))),
     h('div', { class: 'field-label' }, 'Game type',
       segmented('Ranked or unranked', [[true, 'Ranked'], [false, 'Unranked']], isRanked, (v) => send({ t: 'setRanked', ranked: v })),
       h('span', { class: 'hint' }, isRanked
-        ? 'Counts toward records. Either player can switch this before the game starts; switching asks both of you to ready up again.'
-        : "Won't count toward anyone's records. Either player can switch this before the game starts; switching asks both of you to ready up again.")));
+        ? 'Counts toward records.'
+        : "Won't count toward anyone's records."),
+      h('span', { class: 'hint' }, 'Either player can change these before the game starts; changing one asks both of you to ready up again.')));
 
   const mine = me();
   const allReady = s.players.length >= 2 && s.players.every((p) => p.ready && p.deck);
@@ -1343,7 +1348,59 @@ function renderHand(p) {
   const cards = p.hand ?? [];
   el.style.setProperty('--n', cards.length);
   el.replaceChildren(...(cards.length ? cards.map((c) => cardEl(c, { mine: true, zone: 'hand', owner: p.id })) : [h('p', { class: 'hand-empty' }, 'Your hand is empty')]));
+  el.classList.toggle('magnify', canMagnify());
+  if (handPointer.active) magnifyHand(handPointer.x); // keep the effect through re-renders
 }
+
+// ---------------------------------------------------------------- hand magnification (like the Mac Dock)
+// The card nearest the pointer grows and rises fully into view; its neighbours grow a little less,
+// in a smooth wave. Off for touch screens and when the system asks for reduced motion.
+
+const canHover = matchMedia('(hover: hover) and (pointer: fine)').matches; // a mouse or trackpad
+const handPointer = { active: false, x: 0 };
+const MAGNIFY = { scale: 1.75, spread: 1.15 }; // biggest scale; how many card-widths the wave reaches
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const canMagnify = () => canHover && !reduceMotion.matches;
+
+function magnifyHand(x) {
+  const hand = $('#my-hand');
+  if (!hand || !canMagnify() || document.querySelector('.drag-ghost')) return;
+  const box = hand.getBoundingClientRect();
+  for (const card of hand.querySelectorAll('.card')) {
+    // offsetLeft ignores transforms, so the wave is measured from each card's resting place.
+    const centre = box.left + card.offsetLeft + card.offsetWidth / 2;
+    const d = (x - centre) / card.offsetWidth;
+    const pull = Math.exp(-(d * d) / (2 * MAGNIFY.spread * MAGNIFY.spread)); // 1 at the pointer, fading out
+    const scale = 1 + (MAGNIFY.scale - 1) * pull;
+    const lift = (card.offsetHeight * 0.42 + 6) * pull; // enough to clear the bar below the hand
+    card.style.transform = pull < 0.02 ? '' : `translateY(${-lift}px) scale(${scale})`;
+    card.style.zIndex = pull < 0.02 ? '' : String(10 + Math.round(pull * 100));
+  }
+}
+
+function resetHand() {
+  for (const card of document.querySelectorAll('#my-hand .card')) {
+    card.style.transform = '';
+    card.style.zIndex = '';
+  }
+}
+
+// Track the pointer over the hand strip and a little above it, where the magnified cards reach.
+window.addEventListener('pointermove', (e) => {
+  const hand = $('#my-hand');
+  if (!hand || !canMagnify() || e.pointerType === 'touch') return;
+  const box = hand.getBoundingClientRect();
+  const reach = box.height * 1.6;
+  const inside = e.clientY >= box.top - reach && e.clientY <= box.bottom + 4 && e.clientX >= box.left && e.clientX <= box.right;
+  if (inside) {
+    handPointer.active = true;
+    handPointer.x = e.clientX;
+    magnifyHand(e.clientX);
+  } else if (handPointer.active) {
+    handPointer.active = false;
+    resetHand();
+  }
+}, { passive: true });
 
 // "that you won", "that they won", "that Sam won", "no winner"
 function resultPhrase(pr) {
@@ -1414,7 +1471,56 @@ function renderControls() {
       h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: tokenPrompt }, 'Create token'),
       h('button', { class: 'btn small', type: 'button', disabled: !playing, onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, diceMenu()); } }, 'Roll'),
       h('button', { class: 'btn small ghost', type: 'button', disabled: !playing, onclick: () => openModal({ type: 'end' }) }, 'End game'),
+      h('button', { class: 'btn small', type: 'button', onclick: () => openModal({ type: 'view' }), title: 'Card and preview sizes' }, 'View…'),
       h('button', { class: 'btn small ghost', type: 'button', onclick: () => navigate('/') }, 'Leave')));
+}
+
+// Cards an opponent revealed: shown in a panel over the table that doesn't block play.
+function showReveal(msg) {
+  let root = $('#reveal-root');
+  if (!root) document.body.append((root = h('div', { id: 'reveal-root', 'aria-live': 'polite' })));
+  const what = msg.whole ? 'revealed their hand' : `revealed ${plural(msg.cards.length, 'card')}${msg.from === 'library' ? ' from their library' : msg.from === 'hand' ? ' from their hand' : ''}`;
+  const panel = h('section', { class: 'reveal-panel', role: 'dialog', 'aria-label': `${msg.name} ${what}` },
+    h('header', { class: 'reveal-head' },
+      h('span', null, h('b', null, msg.name), ` ${what}`),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', onclick: () => panel.remove() }, '×')),
+    h('div', { class: 'reveal-cards' }, msg.cards.map((c) =>
+      h('div', { class: 'reveal-card', onmouseenter: () => showPreview({ ...c, faceDown: false, counters: {} }, true) }, cardFace({ ...c, faceDown: false }, 'normal')))));
+  root.replaceChildren(panel);
+}
+
+// ---------------------------------------------------------------- view settings (this browser only)
+
+const VIEW_SCALES = {
+  table: { S: 0.85, M: 1, L: 1.2 },
+  hand: { S: 1, M: 1.2, L: 1.45 },
+};
+
+function applyView() {
+  const v = { table: 'M', hand: 'M', preview: 'M', ...store.get('view', {}) };
+  const root = document.documentElement;
+  root.style.setProperty('--table-scale', VIEW_SCALES.table[v.table] ?? 1);
+  root.style.setProperty('--hand-scale', VIEW_SCALES.hand[v.hand] ?? 1.2);
+  document.body.classList.remove('preview-S', 'preview-M', 'preview-L');
+  document.body.classList.add(`preview-${v.preview}`);
+  return v;
+}
+
+function viewSettings() {
+  const v = applyView();
+  const set = (key) => (val) => {
+    store.set('view', { ...store.get('view', {}), [key]: val });
+    applyView();
+    if (S.state?.status && S.state.status !== 'lobby') renderGame(); // re-measure the table
+  };
+  const row = (label, key) => h('div', { class: 'view-row' },
+    h('span', null, label),
+    segmented(`${label} size`, [['S', 'S'], ['M', 'M'], ['L', 'L']], v[key], set(key)));
+  return h('div', { class: 'view-settings' },
+    row('Table cards', 'table'),
+    row('Hand cards', 'hand'),
+    row('Card preview', 'preview'),
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat; a larger preview leaves less room for the game log.'));
 }
 
 function maybeAutoBegin() {
@@ -1467,7 +1573,7 @@ function cardFace(c, size = 'small') {
   return h('span', { class: 'text-face' },
     h('span', { class: 'tf-name' }, displayName(c)),
     c.def.typeLine ? h('span', { class: 'tf-type' }, c.def.typeLine) : null,
-    c.def.pt ? h('span', { class: 'tf-pt' }, c.def.pt) : null);
+    (c.pt ?? c.def.pt) ? h('span', { class: cls('tf-pt', c.pt && 'changed') }, c.pt ?? c.def.pt) : null);
 }
 
 function counterLabel(kind, n) {
@@ -1488,11 +1594,14 @@ function cardEl(c, ctx) {
   c.faceDown && ctx.mine ? h('span', { class: 'peek-tag' }, 'Face down') : null,
   c.token ? h('span', { class: 'token-tag' }, 'Token') : null,
   c.noUntap ? h('span', { class: 'nountap-tag', title: "Doesn't untap during untap" }, 'No untap') : null,
+  c.pt && !c.faceDown && (c.transformed ? c.def.backImageSmall ?? c.def.backImage : c.def.imageSmall ?? c.def.image)
+    ? h('span', { class: 'pt-badge', title: c.def.pt ? `Printed ${c.def.pt}` : 'Power/toughness' }, c.pt)
+    : null,
   Object.keys(c.counters).length
     ? h('span', { class: 'counters' }, Object.entries(c.counters).map(([kind, n]) =>
       h('button', {
         type: 'button',
-        class: cls('counter', kind === '+1/+1' && 'plus', kind === '-1/-1' && 'minus'),
+        class: cls('counter', kind === '+1/+1' && 'plus', kind === '-1/-1' && 'minus', n >= 100 && 'big'),
         disabled: !ctx.mine,
         title: ctx.mine ? 'Click to add one, right-click or shift-click to remove one' : null,
         onpointerdown: (e) => e.stopPropagation(),
@@ -1542,7 +1651,8 @@ function showPreview(c, mine) {
     h('div', { class: 'preview-card' }, face),
     hidden ? h('p', { class: 'hint' }, 'Face-down card') : h('p', { class: 'preview-meta' },
       h('b', null, displayName(c)),
-      c.def.backName ? h('span', { class: 'hint' }, c.transformed ? ` Front: ${c.def.name}` : ` Back: ${c.def.backName}`) : ''));
+      c.def.backName ? h('span', { class: 'hint' }, c.transformed ? ` Front: ${c.def.name}` : ` Back: ${c.def.backName}`) : '',
+      c.pt ? h('span', { class: 'preview-pt' }, ` Now ${c.pt}${c.def.pt && c.def.pt !== c.pt ? ` (printed ${c.def.pt})` : ''}`) : ''));
 }
 
 
@@ -1567,6 +1677,9 @@ function makeDraggable(el, card, zone) {
       if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 6) {
         clearTimeout(longPress);
         ghost = el.cloneNode(true);
+        ghost.style.transform = '';
+        ghost.style.zIndex = '';
+        resetHand();
         ghost.classList.add('drag-ghost');
         ghost.style.width = `${el.offsetWidth}px`;
         ghost.style.height = `${el.offsetHeight}px`;
@@ -1683,6 +1796,7 @@ function libraryPositionPrompt(c, after) {
 function cardMenu(c, zone) {
   if (zone === 'hand') {
     return [
+      { label: 'Reveal to opponent', run: () => { send({ t: 'reveal', cardIds: [c.id] }); toast(`Revealed ${c.def.name} to your opponent.`); } },
       { label: 'Play', hint: 'Double-click', run: mv(c, 'battlefield') },
       { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
       '-',
@@ -1706,6 +1820,8 @@ function cardMenu(c, zone) {
     { label: 'Add other counter…', run: () => counterPrompt(c) },
     hasCounters ? { label: 'Remove all counters', run: () => send({ t: 'clearCounters', cardId: c.id }) } : null,
     '-',
+    c.token ? { label: 'Edit token…', run: () => editTokenPrompt(c) } : null,
+    { label: 'Set power/toughness…', run: () => setPtPrompt(c) },
     { label: 'Create token copy', run: () => send({ t: 'copy', cardId: c.id }) },
     '-',
     ...(c.token
@@ -1734,6 +1850,20 @@ function libraryMenu() {
     '-',
     { label: 'Shuffle…', hint: 'S', run: () => openModal({ type: 'shuffle' }) },
     { label: 'Mulligan (shuffle hand in, draw 7)', run: () => send({ t: 'mulligan' }) },
+    '-',
+    {
+      label: 'Reveal your hand…',
+      run: () => openModal({
+        type: 'confirm', title: 'Reveal your whole hand?', text: 'Your opponent will see every card in your hand, and the log will list them.',
+        confirm: 'Reveal hand',
+        run: () => {
+          const hand = me()?.hand ?? [];
+          if (!hand.length) return toast('Your hand is empty.', 'warn');
+          send({ t: 'reveal', cardIds: hand.map((c) => c.id), whole: 'hand' });
+          toast('Revealed your hand to your opponent.');
+        },
+      }),
+    },
   ];
 }
 
@@ -1788,8 +1918,36 @@ function numberPrompt(title, label, value, run) {
 function counterPrompt(c) {
   prompt(`Add a counter to ${displayName(c)}`, [
     { name: 'kind', label: 'Counter', value: 'charge', list: ['charge', 'loyalty', 'lore', 'shield', 'stun', 'time', 'oil', 'quest'] },
-    { name: 'n', label: 'How many', type: 'number', value: 1, min: 1, max: 99 },
+    { name: 'n', label: 'How many', type: 'number', value: 1, min: 1, max: 999 },
   ], 'Add counters', (v) => send({ t: 'counter', cardId: c.id, kind: v.kind.trim(), delta: parseInt(v.n, 10) || 1 }));
+}
+
+function editTokenPrompt(c) {
+  const type = (c.def.typeLine ?? '').replace(/^Token\s*/, '') || 'Creature';
+  const current = c.counters ?? {};
+  const kinds = ['+1/+1', '-1/-1', ...Object.keys(current).filter((k) => k !== '+1/+1' && k !== '-1/-1')];
+  const label = (k) => (k === '+1/+1' ? '+1/+1 counters' : k === '-1/-1' ? '−1/−1 counters' : `${k[0].toUpperCase()}${k.slice(1)} counters`);
+  prompt(`Edit ${c.def.name}`, [
+    { name: 'name', label: 'Name', value: c.def.name },
+    { name: 'pt', label: 'Power/toughness', value: c.pt ?? c.def.pt ?? '', placeholder: 'Leave empty for non-creatures' },
+    { name: 'typeLine', label: 'Type', value: type, list: ['Creature', 'Artifact', 'Artifact Creature', 'Enchantment', 'Enchantment Creature', 'Treasure', 'Food', 'Clue'] },
+    ...kinds.map((k) => ({ name: `ctr:${k}`, label: label(k), type: 'number', value: current[k] ?? 0, min: 0, max: 999, group: 'counters' })),
+    { name: 'newKind', label: 'Add another counter', value: '', placeholder: 'e.g. charge, shield, oil', list: ['charge', 'loyalty', 'lore', 'shield', 'stun', 'time', 'oil', 'quest', 'flying', 'deathtouch'], group: 'counters' },
+    { name: 'newCount', label: 'How many', type: 'number', value: 1, min: 1, max: 999, group: 'counters' },
+  ], 'Save token', (v) => {
+    const counters = {};
+    for (const [key, val] of Object.entries(v)) if (key.startsWith('ctr:')) counters[key.slice(4)] = parseInt(val, 10) || 0;
+    const extra = String(v.newKind ?? '').trim();
+    if (extra) counters[extra] = (counters[extra] ?? 0) + (parseInt(v.newCount, 10) || 1);
+    send({ t: 'editToken', cardId: c.id, name: v.name, pt: v.pt, typeLine: v.typeLine, counters });
+  });
+}
+
+function setPtPrompt(c) {
+  const printed = c.def.pt ? ` Printed: ${c.def.pt}.` : '';
+  prompt(`Power/toughness of ${c.faceDown ? 'this face-down card' : displayName(c)}`, [
+    { name: 'pt', label: `Power/toughness${printed}`, value: c.pt ?? c.def.pt ?? '', placeholder: 'e.g. 5/5. Leave empty to go back to the printed value' },
+  ], 'Set', (v) => send({ t: 'setPT', cardId: c.id, pt: v.pt }));
 }
 
 function tokenPrompt() {
@@ -1848,18 +2006,22 @@ function modalBody(m) {
           m.onSubmit(values);
         },
       },
-      m.fields.map((f, i) => h('label', { class: 'field-label' }, f.label,
+      m.fields.filter((f) => f.group !== 'counters').map((f, i) => promptField(f, i)),
+      m.fields.some((f) => f.group === 'counters')
+        ? h('fieldset', { class: 'prompt-group' }, h('legend', null, 'Counters'), m.fields.filter((f) => f.group === 'counters').map((f) => promptField(f, 1)))
+        : '',
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn ghost', type: 'button', onclick: closeModal }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, m.submitLabel)));
+      return { title: m.title, content: form };
+      function promptField(f, i) { return h('label', { class: 'field-label' }, f.label,
         f.options
           ? h('select', { name: f.name }, f.options.map(([value, label]) => h('option', { value, selected: value === f.value || null }, label)))
           : h('input', {
             name: f.name, type: f.type ?? 'text', value: f.value ?? '', min: f.min, max: f.max, placeholder: f.placeholder,
             list: f.list ? `dl-${f.name}` : null, autofocus: i === 0, autocomplete: 'off', required: f.name === 'name' || f.name === 'kind' || null,
           }),
-        f.list ? h('datalist', { id: `dl-${f.name}` }, f.list.map((o) => h('option', { value: o }))) : null)),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn ghost', type: 'button', onclick: closeModal }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, m.submitLabel)));
-      return { title: m.title, content: form };
+        f.list ? h('datalist', { id: `dl-${f.name}` }, f.list.map((o) => h('option', { value: o }))) : null); }
     }
 
     case 'zone': {
@@ -1886,7 +2048,13 @@ function modalBody(m) {
       const q = (m.filter ?? '').toLowerCase();
       const typeOf = (c) => c.def.typeLine ?? '';
       const ofType = (c, t) => new RegExp(`\\b${t}\\b`).test(typeOf(c));
-      const cards = lib.cards.filter((c) =>
+      // "Look at the top" mode: you can arrange the shown cards before putting them on the bottom.
+      if (lib.mode === 'top') {
+        const ids = lib.cards.map((c) => c.id);
+        m.order = [...(m.order ?? []).filter((id) => ids.includes(id)), ...ids.filter((id) => !(m.order ?? []).includes(id))];
+      }
+      const shown = lib.mode === 'top' ? m.order.map((id) => lib.cards.find((c) => c.id === id)) : lib.cards;
+      const cards = shown.filter((c) =>
         (!m.typeFilter || ofType(c, m.typeFilter)) &&
         (!q || c.def.name.toLowerCase().includes(q) || typeOf(c).toLowerCase().includes(q)));
       // One-tap type filters, showing only types that are actually in the library.
@@ -1914,7 +2082,24 @@ function modalBody(m) {
         send({ t: 'move', cardId: c.id, to, pos, depth });
         refresh(to === 'library' && staysInView(pos, depth));
       };
+      const moveInOrder = (c, step) => () => {
+        const i = m.order.indexOf(c.id);
+        const j = i + step;
+        if (j < 0 || j >= m.order.length) return;
+        [m.order[i], m.order[j]] = [m.order[j], m.order[i]];
+        renderModal();
+      };
+      const reveal = (list, label) => {
+        send({ t: 'reveal', cardIds: list.map((c) => c.id) });
+        toast(`Revealed ${label} to your opponent.`);
+      };
       const buttons = (c) => [
+        lib.mode === 'top' && m.order.length > 1
+          ? h('span', { class: 'order-arrows' },
+            h('button', { class: 'btn tiny', type: 'button', 'aria-label': `Move ${c.def.name} left`, disabled: m.order[0] === c.id || null, onclick: moveInOrder(c, -1) }, '←'),
+            h('button', { class: 'btn tiny', type: 'button', 'aria-label': `Move ${c.def.name} right`, disabled: m.order.at(-1) === c.id || null, onclick: moveInOrder(c, 1) }, '→'))
+          : '',
+        h('button', { class: 'btn tiny reveal-btn', type: 'button', onclick: () => reveal([c], c.def.name) }, 'Reveal'),
         h('button', { class: 'btn tiny', type: 'button', onclick: act(c, 'hand') }, 'Hand'),
         h('button', { class: 'btn tiny', type: 'button', onclick: act(c, 'battlefield') }, 'Battlefield'),
         h('button', { class: 'btn tiny', type: 'button', onclick: act(c, 'graveyard') }, 'Graveyard'),
@@ -1934,15 +2119,37 @@ function modalBody(m) {
               class: 'filter-input', placeholder: 'Search by name', value: m.filter ?? '', 'aria-label': 'Search by name',
               oninput: (e) => { m.filter = e.target.value; renderModal(); },
             })
-            : h('p', { class: 'hint' }, lib.n === 1 ? 'Your opponent only sees that you looked.' : 'Leftmost is the top card. Your opponent only sees that you looked.'),
+            : h('p', { class: 'hint' }, lib.n === 1
+              ? 'Your opponent only sees that you looked.'
+              : m.order.join() !== lib.cards.map((c) => c.id).join()
+                ? 'Rearranged for putting on the bottom. Your library itself hasn\'t changed yet. Your opponent only sees that you looked.'
+                : 'Leftmost is the top card. Your opponent only sees that you looked.'),
           chips,
           cards.length ? cardGrid(cards, buttons) : h('p', { class: 'hint empty-filter' }, 'No cards match.'),
+          lib.mode === 'top' && shown.length
+            ? h('div', { class: 'top-actions' },
+              h('div', { class: 'top-action-group' },
+                h('span', { class: 'control-label' }, 'Show your opponent'),
+                h('button', { class: 'btn small', type: 'button', onclick: () => reveal(shown, shown.length === 1 ? 'the card' : `all ${shown.length} cards`) },
+                  shown.length === 1 ? 'Reveal this card' : `Reveal all ${shown.length}`)),
+              h('div', { class: 'top-action-group' },
+                h('span', { class: 'control-label' }, shown.length === 1 ? 'Put it on the bottom' : `Put the ${shown.length === lib.n ? '' : 'remaining '}${shown.length} on the bottom`),
+                h('div', { class: 'row wrap' },
+                  h('button', { class: 'btn small', type: 'button', onclick: () => { send({ t: 'bottomMany', cardIds: shown.map((c) => c.id), random: true }); closeModal(); } }, shown.length > 1 ? 'In a random order' : 'Put on bottom'),
+                  shown.length > 1
+                    ? h('button', { class: 'btn small', type: 'button', onclick: () => { send({ t: 'bottomMany', cardIds: shown.map((c) => c.id), random: false }); closeModal(); } }, 'In this order')
+                    : ''),
+                shown.length > 1 ? h('span', { class: 'hint' }, 'Arrange with ← →. In this order, the rightmost card ends up at the very bottom.') : ''))
+            : '',
           // Closing never shuffles unless you choose to.
           h('div', { class: 'row end close-choices' },
             h('button', { class: 'btn', type: 'button', onclick: () => { send({ t: 'shuffle' }); closeModal(); } }, 'Shuffle and close'),
             h('button', { class: 'btn primary', type: 'button', onclick: closeModal }, 'Close without shuffling'))),
       };
     }
+
+    case 'view':
+      return { title: 'View', content: h('div', null, viewSettings(), h('div', { class: 'row end' }, h('button', { class: 'btn primary', type: 'button', onclick: closeModal }, 'Done'))) };
 
     case 'confirm': {
       return {
@@ -2082,4 +2289,5 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('resize', closeMenu);
 
+applyView();
 boot();

@@ -219,7 +219,13 @@ so a player can't push arbitrary images into their opponent's browser.
 | Filter a search by type | The Land / Creature / … buttons above the results |
 | Close a search | "Close without shuffling" (or Esc), or "Shuffle and close" |
 | Look at the top card | Sidebar → Library → Top card, or press T |
+| Reveal cards to your opponent | In "Look at top…": Reveal on a card, or Reveal all; from your hand: card menu → Reveal to opponent; whole hand: ⋯ → Reveal your hand |
+| Put the rest on the bottom | In "Look at top…": In a random order, or arrange with ← → and choose In this order |
+| Card and preview sizes | Sidebar → View… (Small / Medium / Large; only on your screen) |
+| See a card in your hand up close | Move the pointer across your hand: cards magnify like the Mac Dock (off when your system is set to reduce motion) |
 | Keep a card tapped through untap | Card menu → "Doesn't untap during untap" (shows a "No untap" marker) |
+| Change a token after making it | Token's card menu → Edit token… (name, power/toughness, type, and counter counts; 0 removes a counter) |
+| Pumped or shrunk creature | Card menu → Set power/toughness… (shows a brass badge; empty resets it; clears when the card leaves the battlefield) |
 | Look at the top cards, mill, shuffle, mulligan | Sidebar → Library, or the ⋯ button on your library |
 | Put a card into your library at a position | Card menu → "Put into library at position…" (e.g. 3rd from the top), or Position… in any card viewer |
 | Untap all | U |

@@ -33,6 +33,7 @@ export interface Card {
   y: number; // 0..1, 0 = edge nearest the centre line
   token: boolean;
   noUntap?: boolean; // "doesn't untap during your untap step"
+  pt?: string; // power/toughness set by a player (pumped, shrunk…); shown instead of the printed one
 }
 
 export interface DeckList {
@@ -88,6 +89,7 @@ export interface ActionResult {
   changed: boolean;
   error?: string;
   private?: unknown; // reply sent only to the acting player
+  announce?: unknown; // sent to every player at the table (e.g. revealed cards)
   ended?: boolean;
 }
 
@@ -325,6 +327,18 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         log(state, `chose ${me.deck.name} (${main.length + commanders.length} cards)`, me);
         return { changed: true };
       }
+      case 'setStartingLife': {
+        const life = [20, 30, 40].includes(a.life) ? a.life : null;
+        if (!life) return { changed: false, error: 'Starting life can be 20, 30, or 40.' };
+        if (life === state.startingLife) return { changed: false };
+        state.startingLife = life;
+        for (const p of state.players) {
+          p.ready = false; // everyone re-confirms after a change
+          p.life = life;
+        }
+        log(state, `set starting life to ${life}`, me);
+        return { changed: true };
+      }
       case 'setRanked': {
         const ranked = !!a.ranked;
         if (ranked === (state.ranked !== false)) return { changed: false };
@@ -471,6 +485,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         card.tapped = false;
         card.counters = {};
         card.noUntap = false;
+        delete card.pt;
         card.transformed = false;
       }
       card.faceDown = faceDownAfter;
@@ -530,6 +545,55 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       log(state, loc.card.noUntap ? `marked ${n} as "doesn't untap"` : `cleared "doesn't untap" on ${n}`, me);
       return { changed: true };
     }
+    // Change a token after it's made: name, power/toughness, type.
+    case 'editToken': {
+      const loc = findCard(me, a.cardId);
+      if (!loc || loc.zone !== 'battlefield' || !loc.card.token) return { changed: false, error: 'Only tokens on the battlefield can be edited.' };
+      const name = String(a.name ?? '').trim().slice(0, 60);
+      if (!name) return { changed: false, error: 'Give the token a name.' };
+      const shownPt = (c: Card) => c.pt ?? c.def.pt ?? '';
+      const before = `${cardName(loc.card)}${shownPt(loc.card) ? ` ${shownPt(loc.card)}` : ''}`;
+      const pt = String(a.pt ?? '').trim().slice(0, 12);
+      const typeLine = String(a.typeLine ?? '').trim().slice(0, 60);
+      // A fresh object: copies share their original's card data, and editing one mustn't change the others.
+      const def: CardDef = { ...loc.card.def, name };
+      if (typeLine) def.typeLine = /^Token\b/.test(typeLine) ? typeLine : `Token ${typeLine}`;
+      if (loc.card.def.image) {
+        // A token copy keeps its printed card image, so its new power/toughness is shown as a badge.
+        if (pt && pt !== loc.card.def.pt) loc.card.pt = pt; else delete loc.card.pt;
+      } else {
+        if (pt) def.pt = pt; else delete def.pt;
+        delete loc.card.pt;
+      }
+      // Counters: the dialog sends the full set; 0 removes a kind.
+      let counterNote = '';
+      if (a.counters && typeof a.counters === 'object') {
+        const next: Record<string, number> = {};
+        for (const [rawKind, rawN] of Object.entries(a.counters as Record<string, unknown>)) {
+          const kind = String(rawKind).trim().slice(0, 20);
+          const n = int(rawN, 0, 999, 0);
+          if (kind && n > 0) next[kind] = n;
+        }
+        if (Object.keys(next).length > 8) return { changed: false, error: 'Too many counter types on one card.' };
+        const fmt = (cs: Record<string, number>) => Object.entries(cs).map(([k, n]) => `${k} ×${n}`).join(', ') || 'none';
+        if (fmt(next) !== fmt(loc.card.counters)) counterNote = `; counters: ${fmt(next)}`;
+        loc.card.counters = next;
+      }
+      loc.card.def = def;
+      const after = `${name}${shownPt(loc.card) ? ` ${shownPt(loc.card)}` : ''}`;
+      log(state, `${before === after ? `edited token ${name}` : `changed token ${before} to ${after}`}${counterNote}`, me);
+      return { changed: true };
+    }
+    // Pumped or shrunk: show a different power/toughness on any of your cards on the battlefield.
+    case 'setPT': {
+      const loc = findCard(me, a.cardId);
+      if (!loc || loc.zone !== 'battlefield') return { changed: false, error: 'Only cards on the battlefield can have their power/toughness set.' };
+      const pt = String(a.pt ?? '').trim().slice(0, 12);
+      const n = loc.card.faceDown ? 'a face-down card' : cardName(loc.card);
+      if (pt) loc.card.pt = pt; else delete loc.card.pt;
+      log(state, pt ? `set ${n} to ${pt}` : `reset ${n} to its printed power/toughness`, me);
+      return { changed: true };
+    }
     case 'flip': {
       const loc = findCard(me, a.cardId);
       if (!loc || loc.zone !== 'battlefield') return { changed: false };
@@ -550,11 +614,11 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       if (!loc || loc.zone !== 'battlefield') return { changed: false };
       const kind = String(a.kind ?? '').trim().slice(0, 20);
       if (!kind) return { changed: false, error: 'Name the counter.' };
-      const delta = int(a.delta, -99, 99, 1);
+      const delta = int(a.delta, -999, 999, 1);
       if (!(kind in loc.card.counters) && Object.keys(loc.card.counters).length >= 8) {
         return { changed: false, error: 'Too many counter types on one card.' };
       }
-      const next = Math.max(0, (loc.card.counters[kind] ?? 0) + delta);
+      const next = Math.min(999, Math.max(0, (loc.card.counters[kind] ?? 0) + delta));
       if (next === 0) delete loc.card.counters[kind];
       else loc.card.counters[kind] = next;
       log(state, `${delta > 0 ? 'added' : 'removed'} ${Math.abs(delta)} ${kind} counter${Math.abs(delta) === 1 ? '' : 's'} ${delta > 0 ? 'to' : 'from'} ${loc.card.faceDown ? 'a face-down card' : cardName(loc.card)}`, me);
@@ -636,6 +700,44 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       const cards = me.zones.library.slice(0, n).map((c) => ({ id: c.id, def: c.def }));
       if (!a.quiet) log(state, a.n == null ? 'is searching their library' : `looked at the top ${n} card${n === 1 ? '' : 's'} of their library`, me);
       return { changed: !a.quiet, private: { t: 'library', mode: a.n == null ? 'search' : 'top', n, total: me.zones.library.length, cards } };
+    }
+    // Show chosen cards from your hand or library to the whole table.
+    case 'reveal': {
+      const ids: unknown[] = Array.isArray(a.cardIds) ? a.cardIds.slice(0, 60) : [];
+      const cards: Card[] = [];
+      let from: 'hand' | 'library' | null = null;
+      for (const id of ids) {
+        const loc = findCard(me, id);
+        if (!loc || (loc.zone !== 'hand' && loc.zone !== 'library')) return { changed: false, error: 'You can reveal cards from your hand or library.' };
+        from = from && from !== loc.zone ? null : loc.zone;
+        cards.push(loc.card);
+      }
+      if (!cards.length) return { changed: false, error: 'Choose at least one card to reveal.' };
+      const where = a.whole === 'hand' ? 'their hand' : from === 'hand' ? 'from their hand' : from === 'library' ? 'from their library' : '';
+      const names = cards.map(cardName).join(', ');
+      log(state, a.whole === 'hand' ? `revealed their hand: ${names}` : `revealed ${names}${where ? ` ${where}` : ''}`, me);
+      return {
+        changed: true,
+        // Only the revealed cards' faces are sent, never their ids, so they can't be tracked afterwards.
+        announce: { t: 'revealed', by: me.id, name: me.name, whole: a.whole === 'hand', from, at: Date.now(), cards: cards.map((c) => ({ def: c.def, transformed: c.transformed })) },
+      };
+    }
+    // After looking at the top cards: put the ones still showing on the bottom, in a random or chosen order.
+    case 'bottomMany': {
+      const ids: unknown[] = Array.isArray(a.cardIds) ? a.cardIds.slice(0, 200) : [];
+      const lib = me.zones.library;
+      const picked: Card[] = [];
+      for (const id of ids) {
+        const i = lib.findIndex((c) => c.id === id);
+        if (i < 0 || picked.some((c) => c.id === id)) return { changed: false, error: 'Those cards are no longer on top of your library.' };
+        picked.push(lib[i]);
+      }
+      if (!picked.length) return { changed: false };
+      for (const c of picked) lib.splice(lib.indexOf(c), 1);
+      if (a.random) shuffle(picked);
+      lib.push(...picked);
+      log(state, `put ${picked.length === 1 ? 'a card' : `${picked.length} cards`} on the bottom of their library${picked.length > 1 ? (a.random ? ' in a random order' : ' in an order they chose') : ''}`, me);
+      return { changed: true };
     }
     case 'passTurn': {
       const order = state.players.filter((p) => !p.conceded);
@@ -722,7 +824,7 @@ function chat(state: GameState, me: Player, a: any): ActionResult {
 // ---------- what each player is allowed to see ----------
 
 function publicCard(c: Card) {
-  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token, noUntap: !!c.noUntap };
+  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token, noUntap: !!c.noUntap, pt: c.pt ?? null };
 }
 
 function hiddenCard(c: Card) {
