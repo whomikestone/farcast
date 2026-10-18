@@ -1,11 +1,6 @@
-// End-to-end test against `wrangler dev`. It starts its own stand-ins for Scryfall, Google, and
-// Cloudflare Access on :8899. Run wrangler dev with:
-//   npx wrangler dev --var SCRYFALL_API:http://127.0.0.1:8899 \
-//     --var GOOGLE_CLIENT_ID:test-client.apps.googleusercontent.com --var GOOGLE_CLIENT_SECRET:test-secret \
-//     --var GOOGLE_AUTH_URL:http://127.0.0.1:8899/google/auth --var GOOGLE_TOKEN_URL:http://127.0.0.1:8899/google/token \
-//     --var ALLOWED_EMAILS:gina@example.com \
-//     --var ACCESS_TEAM_DOMAIN:test.cloudflareaccess.com --var ACCESS_AUD:test-aud --var ACCESS_CERTS_URL:http://127.0.0.1:8899/access/certs
-// then: npm test
+// End-to-end test against a local server. It starts its own stand-ins for Scryfall, Google, and
+// Cloudflare Access on :8899. In one terminal: npm run dev:test   (fresh local database each time)
+// In another:                                       npm test
 import WebSocket from 'ws';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';

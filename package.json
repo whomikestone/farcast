@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:test": "rm -rf .wrangler/state && wrangler d1 migrations apply farcast --local && wrangler dev --port 8787 --ip 127.0.0.1 --var SCRYFALL_API:http://127.0.0.1:8899 --var GOOGLE_CLIENT_ID:test-client.apps.googleusercontent.com --var GOOGLE_CLIENT_SECRET:test-secret --var GOOGLE_AUTH_URL:http://127.0.0.1:8899/google/auth --var GOOGLE_TOKEN_URL:http://127.0.0.1:8899/google/token --var ALLOWED_EMAILS:gina@example.com --var ACCESS_TEAM_DOMAIN:test.cloudflareaccess.com --var ACCESS_AUD:test-aud --var ACCESS_CERTS_URL:http://127.0.0.1:8899/access/certs",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply farcast --local",
     "db:migrate": "wrangler d1 migrations apply farcast --remote",

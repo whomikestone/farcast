@@ -18,9 +18,8 @@ npm run dev                  # http://localhost:8787
 Open two browser windows (one normal, one private), create an account in each, save a
 deck in each, and play against yourself.
 
-End-to-end test. It starts its own stand-ins for Scryfall, Google, and Cloudflare Access, so it
-runs offline. Start the dev server with the test settings listed at the top of
-`test/smoke.mjs`, on a fresh local database, then run `npm test`.
+End-to-end test (runs offline; it stands in for Scryfall, Google, and Cloudflare Access):
+`npm run dev:test` in one terminal (starts a fresh local database each time), then `npm test` in another.
 
 ## Deploy to Cloudflare
 
