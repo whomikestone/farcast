@@ -48,6 +48,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Counters up to 999
 
 *Medium*
+- ✅ Practice bot: play a simple bot with a Commander deck to try changes without a second account (always unranked)
 - ⬜ Point at a card: any visible card glows on both screens for a few seconds, with a log line
 - ⬜ Sketch pad under your library: named counters you create (Squirrels, Experience, Storm…) plus a free-form note (e.g. floating mana); visible to both players
 - ⬜ Token revamp: stacks ("Squirrel ×37") with add/remove and partial tapping (splits into tapped and untapped stacks); quick picker for common tokens with Scryfall token art

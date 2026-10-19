@@ -203,6 +203,10 @@ input::placeholder, textarea::placeholder { color: rgba(236, 229, 211, 0.35); }
 .seat-deck { grid-area: deck; color: var(--bone-dim); font-size: 0.9rem; }
 .seat-ready { grid-area: ready; font-size: 0.85rem; color: var(--bone-dim); }
 .seat-ready.yes { color: var(--heal); }
+.seat-row.empty { grid-template-columns: auto 1fr; grid-template-areas: 'dot name' 'dot act'; }
+.seat-row.bot { grid-template-areas: 'dot name ready' 'dot deck act'; }
+.seat-row .btn { grid-area: act; justify-self: start; margin-top: 0.4rem; }
+.seat-row.bot .btn { justify-self: end; margin-top: 0; }
 
 .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(236, 229, 211, 0.25); display: inline-block; flex: none; }
 .dot.online { background: var(--heal); box-shadow: 0 0 0 3px rgba(147, 214, 163, 0.18); }

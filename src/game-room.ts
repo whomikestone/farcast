@@ -2,11 +2,14 @@ import { DurableObject } from 'cloudflare:workers';
 import { addPlayer, applyAction, cleanName, createGame, viewFor, type GameState } from './game';
 import type { Env } from './index';
 import { getDeck } from './decks';
+import { BOT_NAME, BOT_USER_ID, botDeck, nextBotStep } from './bot';
 
 const MAX_MESSAGE_BYTES = 512 * 1024;
 const IDLE_LOBBY_MS = 60 * 60 * 1000; // empty/unstarted rooms: 1 hour
 const IDLE_PLAYING_MS = 3 * 60 * 60 * 1000; // games with no activity: 3 hours
 const ENDED_LINGER_MS = 30 * 60 * 1000; // finished games stay open for a rematch: 30 min
+const BOT_STEP_MS = 700; // pause between the practice bot's moves, so you can follow along
+const BOT_MAX_STEPS = 60; // per turn; it passes if it somehow gets stuck
 
 interface Attachment {
   userId?: string; // set by the Worker after checking the session cookie
@@ -16,6 +19,7 @@ interface Attachment {
 
 export class GameRoom extends DurableObject<Env> {
   private state: GameState | null = null;
+  private botBusy = false; // the practice bot is playing its turn
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -103,6 +107,17 @@ export class GameRoom extends DurableObject<Env> {
       msg = { t: 'setDeck', deck: { id: deck.id, name: deck.name, main: deck.main, commanders: deck.commanders } };
     }
 
+    if (msg?.t === 'addBot') return this.addBot(ws);
+    if (msg?.t === 'removeBot') {
+      const bot = s.players.find((p) => p.bot);
+      if (s.status !== 'lobby' || !bot) return;
+      s.players = s.players.filter((p) => p !== bot);
+      s.log.push({ ts: Date.now(), text: `${bot.name} left`, kind: 'system' });
+      await this.persist();
+      this.broadcast();
+      return;
+    }
+
     const res = applyAction(s, att.playerId, msg);
     if (res.error) this.send(ws, { t: 'error', message: res.error });
     if (res.private) this.send(ws, res.private);
@@ -116,6 +131,66 @@ export class GameRoom extends DurableObject<Env> {
       if (res.ended) await this.archive();
       await this.persist();
       this.broadcast();
+      await this.botFollowUp();
+    }
+  }
+
+  // ----- the practice bot -----
+
+  private async addBot(ws: WebSocket) {
+    const s = this.state!;
+    if (s.status !== 'lobby') return this.send(ws, { t: 'error', message: 'Add the practice bot before the game starts.' });
+    if (s.players.some((p) => p.bot)) return;
+    if (s.players.length >= s.maxPlayers) return this.send(ws, { t: 'error', message: 'This game is full.' });
+    let deck;
+    try {
+      deck = await botDeck(this.env.SCRYFALL_API);
+    } catch {
+      return this.send(ws, { t: 'error', message: "The practice bot's deck couldn't be loaded. Try again in a moment." });
+    }
+    // Someone may have joined while the deck loaded.
+    if (s.status !== 'lobby' || s.players.length >= s.maxPlayers || s.players.some((p) => p.bot)) return;
+    const bot = addPlayer(s, BOT_USER_ID, BOT_NAME);
+    bot.bot = true;
+    s.log.push({ ts: Date.now(), text: `${bot.name} joined. Games against it are unranked.`, kind: 'system' });
+    s.ranked = false; // never counts toward records
+    applyAction(s, bot.id, { t: 'setDeck', deck });
+    applyAction(s, bot.id, { t: 'ready', ready: true });
+    s.lastActivity = Date.now();
+    await this.persist();
+    this.broadcast();
+  }
+
+  // After anything changes: the bot readies up again in the lobby, and plays its turn.
+  private async botFollowUp() {
+    const s = this.state;
+    const bot = s?.players.find((p) => p.bot);
+    if (!s || !bot) return;
+    if (s.status === 'lobby' && bot.deck && !bot.ready) {
+      applyAction(s, bot.id, { t: 'ready', ready: true });
+      await this.persist();
+      this.broadcast();
+      return;
+    }
+    if (s.status !== 'playing' || s.turn?.activeId !== bot.id || this.botBusy) return;
+    this.botBusy = true;
+    try {
+      for (let i = 0; ; i++) {
+        await new Promise((r) => setTimeout(r, BOT_STEP_MS));
+        // The game may have ended, or the room closed, while it waited.
+        if (this.state !== s) return;
+        const steps = i < BOT_MAX_STEPS ? nextBotStep(s, bot) : s.turn?.activeId === bot.id ? [{ t: 'passTurn' }] : null;
+        if (!steps) return;
+        let changed = false;
+        for (const step of steps) changed = applyAction(s, bot.id, step).changed || changed;
+        if (changed) {
+          s.lastActivity = Date.now();
+          await this.persist();
+          this.broadcast();
+        }
+      }
+    } finally {
+      this.botBusy = false;
     }
   }
 
@@ -144,6 +219,7 @@ export class GameRoom extends DurableObject<Env> {
     s.lastActivity = Date.now();
     await this.persist();
     this.broadcast();
+    await this.botFollowUp(); // e.g. the room was restarted partway through the bot's turn
   }
 
   async webSocketClose(ws: WebSocket, code: number) {

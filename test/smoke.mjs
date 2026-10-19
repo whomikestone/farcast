@@ -475,6 +475,44 @@ assert.equal(hist.filter((g) => g.ranked === 1).length, 3);
 step('lobby: starting life and ranked/unranked can be changed (both reset ready); unranked ends without confirmation, kept in history, never counted');
 a2.ws.close(); b2.ws.close();
 
+// ================= practice bot =================
+const { data: { code: code3 } } = await alice.call('/api/rooms', { method: 'POST', body: { startingLife: 40 } });
+const a3 = new Client(alice);
+await a3.connect(code3);
+await a3.act({ t: 'addBot' }, (m) => m.state.players.length === 2 && m.state.players.some((p) => p.bot && p.ready));
+assert.equal(a3.opp.bot, true);
+assert.equal(a3.opp.online, true, 'the bot always shows as connected');
+assert.equal(a3.opp.deck.commanders.length, 1, 'the bot plays a commander deck');
+assert.equal(a3.opp.deck.count, 100);
+assert.equal(a3.state.ranked, false, 'adding the bot makes the game unranked');
+a3.send({ t: 'setRanked', ranked: true });
+assert.match((await a3.next('error')).message, /always unranked/);
+await a3.act({ t: 'removeBot' }, (m) => m.state.players.length === 1);
+await a3.act({ t: 'addBot' }, (m) => m.state.players.some((p) => p.bot && p.ready));
+await a3.act({ t: 'selectDeck', deckId: aDeck.id }, (m) => P(a3, m).deck?.id === aDeck.id);
+await a3.act({ t: 'ready', ready: true }, (m) => P(a3, m).ready);
+await a3.act({ t: 'start' }, (m) => m.state.status === 'playing');
+const botTurn = async () => {
+  if (a3.state.turn.activeId === a3.you) await a3.act({ t: 'passTurn' }, (m) => m.state.turn.activeId !== a3.you);
+  await a3.next('state', (m) => m.state.turn.activeId === a3.you, 30000);
+};
+await botTurn();
+const botName = a3.opp.name;
+assert.ok(a3.state.log.some((l) => l.by === a3.opp.id && /^began their turn/.test(l.text)), 'the bot began its turn');
+assert.ok(a3.opp.battlefield.some((c) => /Land/.test(c.def.typeLine)), 'the bot played a land');
+assert.equal(a3.opp.hand, null, "the bot's hand stays hidden");
+await botTurn();
+assert.ok(a3.state.log.some((l) => l.by === a3.opp.id && l.kind === 'chat' && /^Attacking .+ damage/.test(l.text)), 'the bot attacks and says how much damage');
+assert.equal(P(a3, { state: a3.state }).life, 40, "the bot never changes your life total");
+await a3.act({ t: 'endGame', winnerId: a3.you }, (m) => m.state.status === 'ended');
+await a3.act({ t: 'rematch' }, (m) => m.state.status === 'lobby');
+await a3.next('state', (m) => m.state.players.some((p) => p.bot && p.ready));
+await wait(300);
+assert.equal((await alice.call('/api/games')).data.games[0].players.find((p) => !p.you).name, botName, 'bot games are kept in history');
+assert.deepEqual((await alice.call(`/api/records?opponent=${bob.id}`)).data.overall, { wins: 1, losses: 2 }, 'bot games never count');
+step('practice bot: joins with a 100-card commander deck, always unranked, plays its turns (land, spells, attacks in chat) and passes back, readies for a rematch');
+a3.ws.close();
+
 a.ws.close();
 b.ws.close();
 c.close();

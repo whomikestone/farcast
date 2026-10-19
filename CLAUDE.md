@@ -29,6 +29,7 @@ busy, an old server or stand-in is still running.
 | `src/index.ts` | Worker: API routes, sign-in, decks, records, history; forwards room traffic to the Durable Object |
 | `src/game-room.ts` | `GameRoom` Durable Object: one per room, WebSockets (hibernation), expiry alarms, writes results to D1 |
 | `src/game.ts` | Pure game logic: state, `applyAction()` for every player action, `viewFor()` (what each player may see) |
+| `src/bot.ts` | The practice bot: its built-in Commander deck and the simple turn it plays (driven by `GameRoom`) |
 | `src/auth.ts` | Sessions, password accounts, Google OIDC (PKCE), Cloudflare Access JWT verification |
 | `src/deck.ts` / `src/decks.ts` | Decklist parsing + Scryfall lookup / saved decks and win–loss records |
 | `public/app.js`, `public/styles.css` | The whole client: plain JS, no build step |
