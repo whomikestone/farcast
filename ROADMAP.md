@@ -61,7 +61,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Choose the app's name: Farcast (check trademarks before any public launch; it's close to "Farcaster," an unrelated social network)
 - ✅ Automatic deploys on push (repo reconnected in Workers & Pages → farcast → Settings → Build)
 - ✅ 2026.10.12 changes deployed (What's new, library updates, playmat room)
-- ⬜ Push the 2026.10.17 changes (reveal, put the rest on the bottom, sizes, magnification, token editing)
+- ✅ Push the 2026.10.17 changes (reveal, put the rest on the bottom, sizes, magnification, token editing)
 - ✅ Custom domain: farcast.mstone.io
 - ✅ workers.dev address disabled (the app is only reachable at farcast.mstone.io)
 - ⬜ Set up sign-in: Access policy with your group's emails, and/or Google OAuth client
