@@ -1,6 +1,8 @@
 // Pure game logic: no Cloudflare APIs in here, so it's easy to test.
 // The Durable Object owns one GameState and calls applyAction() for every message.
 
+import type { BotMemo } from './bot';
+
 export type ZoneName = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command';
 export const ZONES: ZoneName[] = ['library', 'hand', 'battlefield', 'graveyard', 'exile', 'command'];
 const PUBLIC_ZONES: ReadonlySet<ZoneName> = new Set(['battlefield', 'graveyard', 'exile', 'command']);
@@ -55,6 +57,8 @@ export interface Player {
   commanderDamage: Record<string, number>; // keyed by the source player's id
   zones: Record<ZoneName, Card[]>;
   conceded: boolean;
+  bot?: boolean; // the practice bot, played by the room itself
+  botMemo?: BotMemo;
 }
 
 export interface LogEntry {
@@ -342,6 +346,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       case 'setRanked': {
         const ranked = !!a.ranked;
         if (ranked === (state.ranked !== false)) return { changed: false };
+        if (ranked && state.players.some((p) => p.bot)) return { changed: false, error: 'Games against the practice bot are always unranked.' };
         state.ranked = ranked;
         for (const p of state.players) p.ready = false; // everyone re-confirms after a change
         log(state, ranked ? 'made this a ranked game. It will count toward records.' : "made this an unranked game. It won't count toward records.", me);
@@ -365,6 +370,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
           p.counters = { poison: 0 };
           p.commanderDamage = {};
           p.conceded = false;
+          delete p.botMemo;
         }
         const first = state.players[randInt(state.players.length)];
         state.status = 'playing';
@@ -398,6 +404,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         p.life = state.startingLife;
         p.counters = { poison: 0 };
         p.commanderDamage = {};
+        delete p.botMemo;
       }
       log(state, `${me.name} set up a rematch`, undefined, 'system');
       return { changed: true };
@@ -853,7 +860,8 @@ export function viewFor(state: GameState, viewerId: string, online: Set<string>)
         name: p.name,
         userId: p.userId,
         seat: p.seat,
-        online: online.has(p.id),
+        bot: !!p.bot,
+        online: online.has(p.id) || !!p.bot,
         ready: p.ready,
         conceded: p.conceded,
         deck: p.deck

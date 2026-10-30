@@ -484,6 +484,21 @@ function renderHome(error) {
     }
   };
 
+  // An unranked room with the practice bot already seated, for trying things alone.
+  const practice = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const { code: c } = await api('/api/rooms', { method: 'POST', body: { startingLife: life, ranked: false } });
+      S.addBotTo = c;
+      navigate(`/r/${c}`);
+    } catch (err) {
+      if (err instanceof SignedOut) return;
+      toast(err.message, 'error');
+      btn.disabled = false;
+    }
+  };
+
   const join = (e) => {
     e.preventDefault();
     const c = code.value.trim();
@@ -502,7 +517,9 @@ function renderHome(error) {
           h('h2', null, 'Start a game'),
           h('div', { class: 'field-label' }, 'Starting life', lifeChoice),
           h('div', { class: 'field-label' }, 'Game type', rankedChoice, rankedHint),
-          h('button', { class: 'btn primary', type: 'button', onclick: create }, 'Create game')),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn primary', type: 'button', onclick: create }, 'Create game'),
+            h('button', { class: 'btn', type: 'button', onclick: practice, title: 'An unranked game against a simple bot playing a Commander deck' }, 'Practice against a bot'))),
         h('form', { class: 'panel', onsubmit: join },
           h('h2', null, 'Join a game'),
           h('label', { class: 'field-label' }, 'Room code', code),
@@ -922,6 +939,10 @@ function onMessage(msg) {
         S.records = null;
         api('/api/decks').then(({ decks }) => { S.decks = decks; render(); }).catch(() => {});
       }
+      if (S.addBotTo === S.code && S.state.status === 'lobby') {
+        S.addBotTo = null;
+        if (S.state.players.length < S.state.maxPlayers && !S.state.players.some((p) => p.bot)) send({ t: 'addBot' });
+      }
       render();
       maybeAutoBegin();
       loadRecords();
@@ -958,7 +979,7 @@ async function loadRecords() {
   const mine = me();
   const opp = opponents()[0];
   const myDeck = mine?.deck?.id ?? '';
-  if (!mine || !opp) return;
+  if (!mine || !opp || opp.bot) return;
   const key = `${myDeck}|${opp.userId}|${opp.deck?.id ?? ''}`;
   if (S.records?.key === key) return;
   S.records = { key, loading: true };
@@ -979,7 +1000,7 @@ const pct = (r) => (r.wins + r.losses ? `${Math.round((r.wins / (r.wins + r.loss
 function headToHead() {
   const mine = me();
   const opp = opponents()[0];
-  if (!opp) return '';
+  if (!opp || opp.bot) return '';
   const r = S.records && !S.records.loading ? S.records : null;
   const side = (p, cls_) => h('div', { class: cls('h2h-side', cls_) },
     h('span', { class: 'h2h-player' }, p.name),
@@ -1011,7 +1032,7 @@ function recordsBlock() {
   const r = S.records;
   const mine = me();
   const opp = opponents()[0];
-  if (!r || r.loading || !mine || !opp) return '';
+  if (!r || r.loading || !mine || !opp || opp.bot) return '';
   return h('div', { class: 'records', 'aria-label': 'Your records' },
     h('div', { class: 'rec-row' },
       h('span', { class: 'rec-label' }, `You vs ${opp.name}`),
@@ -1078,19 +1099,23 @@ function renderSeats() {
   for (let i = 0; i < s.maxPlayers; i++) {
     const p = s.players.find((x) => x.seat === i);
     if (!p) {
-      seats.push(h('li', { class: 'seat-row empty' }, h('span', { class: 'dot' }), h('span', null, 'Waiting for an opponent. Send them the invite link.')));
+      seats.push(h('li', { class: 'seat-row empty' }, h('span', { class: 'dot' }), h('span', null, 'Waiting for an opponent. Send them the invite link.'),
+        h('button', { class: 'btn small', type: 'button', title: 'An unranked game against a simple bot playing a Commander deck', onclick: () => send({ t: 'addBot' }) }, 'Play the practice bot')));
       continue;
     }
     seats.push(
-      h('li', { class: cls('seat-row', isMine(p.id) ? 'mine' : 'theirs') },
+      h('li', { class: cls('seat-row', isMine(p.id) ? 'mine' : 'theirs', p.bot && 'bot') },
         h('span', { class: cls('dot', p.online && 'online'), title: p.online ? 'Connected' : 'Disconnected' }),
         h('span', { class: 'seat-name' }, p.name, isMine(p.id) ? h('small', null, ' (you)') : ''),
         h('span', { class: 'seat-deck' }, p.deck ? `${p.deck.name}${p.deck.commanders.length ? ` (${p.deck.commanders.join(' & ')})` : ''}` : 'Choosing a deck'),
-        h('span', { class: cls('seat-ready', p.ready && 'yes') }, p.ready ? 'Ready' : 'Not ready')));
+        h('span', { class: cls('seat-ready', p.ready && 'yes') }, p.ready ? 'Ready' : 'Not ready'),
+        p.bot ? h('button', { class: 'btn small', type: 'button', onclick: () => send({ t: 'removeBot' }) }, 'Remove') : ''));
   }
+  const bot = s.players.find((p) => p.bot);
   const isRanked = s.ranked !== false;
   $('#seats').replaceChildren(
     h('ul', { class: 'seat-list' }, seats),
+    bot ? h('p', { class: 'hint' }, `${bot.name} plays its turns by itself: it plays a land, casts what its lands can pay for, attacks with everything, and passes. It says in chat how much damage it attacks for; change your life to match. Games against it are unranked.`) : '',
     h('div', { class: 'field-label' }, 'Starting life',
       segmented('Starting life', [[40, '40'], [30, '30'], [20, '20']], s.startingLife, (v) => send({ t: 'setStartingLife', life: v }))),
     h('div', { class: 'field-label' }, 'Game type',

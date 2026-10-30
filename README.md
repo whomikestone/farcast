@@ -190,6 +190,14 @@ the lobby before the game starts (which asks both players to ready up again). Un
 kept in your history, marked "Unranked," but never count toward records, and ending one doesn't
 need confirmation.
 
+**Practice bot.** To try the table alone, choose "Practice against a bot" on the home page, or
+"Play the practice bot" in an empty seat in the lobby. The bot plays a 100-card mono-green
+Commander deck (Marwyn, the Nurturer) and isn't clever: each turn it untaps and draws, plays a
+land, casts what its untapped lands can pay for (its commander included, with tax), attacks with
+everything that was already out, discards down to seven, and passes. It never changes your life;
+it says in chat how much damage it's attacking for, and you apply it yourself. Games against it are
+always unranked and never count toward records.
+
 **Records.** Every finished ranked game with an agreed winner counts. Before a game, the lobby's head-to-head
 panel shows three records: you against this player with any decks, your chosen deck against this
 player, and your deck against their exact deck. Your deck list shows each deck's overall record. Games with no winner and
@@ -232,6 +240,7 @@ so a player can't push arbitrary images into their opponent's browser.
 | Token, dice, or coin | Right-click empty battlefield, or the sidebar buttons |
 | Counter badges | Click to add one, right-click or shift-click to remove one |
 | Life | − / + on your own bar, shift-click for 5 |
+| Play against the practice bot | Home → Practice against a bot, or lobby → Play the practice bot (Remove takes it out) |
 
 ## Roadmap
 
