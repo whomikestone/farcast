@@ -30,7 +30,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Unranked games: kept in history, never counted toward records
 - ✅ What's new page (change log), names fixed once chosen, type filters in library search,
   close without shuffling, "doesn't untap," one-click top card
-- ✅ More playmat room: both halves equal height (about 3 cards tall on a laptop), hand in its own
+- ✅ More playmat room: both halves equal height (at least 3 cards tall at Medium, in any window size), hand in its own
   strip, slimmer player bars
 
 **Next up (from play-testing)**

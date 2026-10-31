@@ -1173,6 +1173,15 @@ function typeRank(def) {
 
 // ---------------------------------------------------------------- game board
 
+// Card width comes from the window's width, capped so a playmat is at least 3 cards tall at Medium,
+// however short the window. Cards sit at fractions of the playmat, so they keep their places.
+const TABLE_ROWS = 3;
+function fitTableCards() {
+  const field = $('#my-field');
+  if (!field?.clientHeight) return;
+  document.documentElement.style.setProperty('--fit-w', `${field.clientHeight / TABLE_ROWS / 1.396}px`);
+}
+
 function renderGame() {
   const app = $('#app');
   if (!$('#board')) {
@@ -1213,6 +1222,7 @@ function renderGame() {
               input.value = '';
             },
           }, h('input', { id: 'chat', placeholder: 'Message', maxlength: 300, autocomplete: 'off', 'aria-label': 'Chat message' })))));
+    new ResizeObserver(fitTableCards).observe($('#my-field'));
   }
 
   const mine = me();

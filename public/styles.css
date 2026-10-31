@@ -36,7 +36,8 @@
 
   --table-scale: 1;
   --hand-scale: 1.2;
-  --cw: calc(clamp(50px, 4.9vw, 92px) * var(--table-scale));
+  /* --fit-w is set from the playmat's height so a playmat holds 3 rows of cards at Medium (fitTableCards). */
+  --cw: calc(min(clamp(50px, 4.9vw, 92px), var(--fit-w, 92px)) * var(--table-scale));
   --hw: calc(clamp(50px, 4.9vw, 92px) * var(--hand-scale));
   --ch: calc(var(--cw) * 1.396);
   --card-r: calc(var(--cw) * 0.055);
