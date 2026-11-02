@@ -77,8 +77,9 @@ busy, an old server or stand-in is still running.
 - Token stacks: a token `Card` has `qty` (absent = 1); one card stands for that many identical tokens.
 - Modal state objects use `m.type` for the modal kind: store other values under other names
   (a library filter once overwrote it and closed the window).
-- `.side` (game sidebar) grid rows must match its children (controls, log, chat). The card preview is not in
-  the sidebar: it is a fixed overlay (`#preview`) shown on hover. Size it by width, never by `vh` caps (those
+- `.side` (game sidebar) grid rows must match its children (controls, log, chat). The card preview (`#preview`) is the
+  sidebar's first child but, in the default Pop up style, `position: fixed` (so not a grid item), shown on hover;
+  the Pinned style (`body.preview-pinned`) makes it a real first row and adds a grid row for it. Size it by width, never by `vh` caps (those
   kept it ~155px wide on laptops through several attempts).
 - The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`), starting
   only once the pointer is on the strip (then kept while on a raised card);

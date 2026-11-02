@@ -45,6 +45,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
   the sidebar, readable without leaving the game, and linked from the README.
 - ✅ Card size setting: Small / Medium / Large, separately for your hand and the table (View…)
 - ✅ Larger hover preview in the sidebar, with a size setting
+- ✅ Preview style setting: pop up while pointing, or pinned in the sidebar until you point at another card (View…)
 - ✅ Counters up to 999
 
 *Medium*

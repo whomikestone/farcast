@@ -1200,8 +1200,10 @@ function renderGame() {
               })),
             h('div', { class: 'hand', id: 'my-hand', dataset: { drop: 'hand' }, 'aria-label': 'Your hand' }),
             h('footer', { class: 'seat-bar', id: 'my-bar' }))),
-        h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }),
         h('aside', { class: 'side' },
+          // Pop up: floats over the sidebar while you point at a card (position: fixed, so not a grid row).
+          // Pinned: the sidebar's first row, keeping the last card you pointed at.
+          h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }, h('p', { class: 'hint' }, 'Point at a card to see it here. Only you see this.')),
           h('div', { class: 'controls', id: 'controls' }),
           h('ol', { class: 'log', id: 'log', 'aria-label': 'Game log' }),
           h('form', {
@@ -1523,12 +1525,13 @@ const VIEW_SCALES = {
 };
 
 function applyView() {
-  const v = { table: 'M', hand: 'M', preview: 'M', ...store.get('view', {}) };
+  const v = { table: 'M', hand: 'M', preview: 'M', previewMode: 'popup', ...store.get('view', {}) };
   const root = document.documentElement;
   root.style.setProperty('--table-scale', VIEW_SCALES.table[v.table] ?? 1);
   root.style.setProperty('--hand-scale', VIEW_SCALES.hand[v.hand] ?? 1.2);
   document.body.classList.remove('preview-S', 'preview-M', 'preview-L');
   document.body.classList.add(`preview-${v.preview}`);
+  document.body.classList.toggle('preview-pinned', v.previewMode === 'pinned');
   return v;
 }
 
@@ -1546,7 +1549,10 @@ function viewSettings() {
     row('Table cards', 'table'),
     row('Hand cards', 'hand'),
     row('Card preview', 'preview'),
-    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. The card preview shows while you point at a card; larger sizes reach past the sidebar onto the table.'));
+    h('div', { class: 'view-row' },
+      h('span', null, 'Preview style'),
+      segmented('Preview style', [['popup', 'Pop up'], ['pinned', 'Pinned']], v.previewMode, set('previewMode'))),
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. Pop up shows a large card while you point at one; larger sizes reach past the sidebar onto the table. Pinned keeps the last card you pointed at in the top of the sidebar until you point at another; larger sizes leave less room for the game log.'));
 }
 
 function maybeAutoBegin() {
@@ -1684,8 +1690,9 @@ function tap(c) {
 
 // ---------------------------------------------------------------- card preview (sidebar, local only)
 
-// A large card floats over the top of the sidebar while the pointer is on a card, and goes away when
-// the pointer leaves it. It ignores the pointer, so it never gets in the way of what is underneath.
+// Pop up (default): a large card floats over the top of the sidebar while the pointer is on a card, and
+// goes away when the pointer leaves it. It ignores the pointer, so it never gets in the way of what is
+// underneath. Pinned: the card sits in the top of the sidebar and stays until you point at another.
 let previewHide = 0;
 
 function showPreview(c, mine) {
@@ -1706,6 +1713,7 @@ function showPreview(c, mine) {
 
 function hidePreview() {
   clearTimeout(previewHide);
+  if (document.body.classList.contains('preview-pinned')) return;
   // A short wait, so moving across the gap between two cards doesn't flicker.
   previewHide = setTimeout(() => $('#preview')?.classList.remove('show'), 90);
 }

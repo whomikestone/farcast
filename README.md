@@ -228,7 +228,8 @@ so a player can't push arbitrary images into their opponent's browser.
 | Look at the top card | Sidebar → Library → Top card, or press T |
 | Reveal cards to your opponent | In "Look at top…": Reveal on a card, or Reveal all; from your hand: card menu → Reveal to opponent; whole hand: ⋯ → Reveal your hand |
 | Put the rest on the bottom | In "Look at top…": In a random order, or arrange with ← → and choose In this order |
-| Card and preview sizes | Sidebar → View… (Small / Medium / Large; only on your screen). The card preview shows at the top right while you point at a card |
+| Card and preview sizes | Sidebar → View… (Small / Medium / Large; only on your screen) |
+| Card preview style | Sidebar → View… → Preview style: **Pop up** shows a large card at the top right while you point at one; **Pinned** keeps the last card you pointed at in the top of the sidebar until you point at another |
 | See a card in your hand up close | Move the pointer across your hand: cards magnify like the Mac Dock (off when your system is set to reduce motion) |
 | Keep a card tapped through untap | Card menu → "Doesn't untap during untap" (shows a "No untap" marker) |
 | Change a token after making it | Token's card menu → Edit token… (name, power/toughness, type, how many tokens, and counter counts; 0 removes a counter) |
