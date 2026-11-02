@@ -75,7 +75,8 @@ busy, an old server or stand-in is still running.
 - Modal state objects use `m.type` for the modal kind: store other values under other names
   (a library filter once overwrote it and closed the window).
 - `.side` (game sidebar) grid rows must match its children (preview, controls, log, chat).
-- The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`);
+- The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`), starting
+  only once the pointer is on the strip (then kept while on a raised card);
   drag ghosts must clear the magnified transform.
 - Counter badges: click adds one; right-click or shift-click removes one (so right-clicking a badge does
   not open the card menu).

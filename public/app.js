@@ -1410,14 +1410,15 @@ function resetHand() {
   }
 }
 
-// Track the pointer over the hand strip and a little above it, where the magnified cards reach.
+// The effect starts only once the pointer is on the hand strip itself, so the bottom of the
+// battlefield stays usable. Once started, it keeps going while the pointer is on a raised card.
 window.addEventListener('pointermove', (e) => {
   const hand = $('#my-hand');
   if (!hand || !canMagnify() || e.pointerType === 'touch') return;
   const box = hand.getBoundingClientRect();
-  const reach = box.height * 1.6;
-  const inside = e.clientY >= box.top - reach && e.clientY <= box.bottom + 4 && e.clientX >= box.left && e.clientX <= box.right;
-  if (inside) {
+  const onStrip = e.clientY >= box.top && e.clientY <= box.bottom + 4 && e.clientX >= box.left && e.clientX <= box.right;
+  const onRaisedCard = handPointer.active && e.target instanceof Element && !!e.target.closest('#my-hand .card');
+  if (onStrip || onRaisedCard) {
     handPointer.active = true;
     handPointer.x = e.clientX;
     magnifyHand(e.clientX);
