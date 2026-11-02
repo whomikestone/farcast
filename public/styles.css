@@ -446,15 +446,26 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
 /* sidebar */
 
 .side {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; /* preview, controls, log, chat */ min-height: 0; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; /* controls, log, chat */ min-height: 0; overflow: hidden;
   border-left: 1px solid var(--line);
   background: rgba(5, 14, 12, 0.55);
 }
-.preview { padding: 0.9rem 0.9rem 0.5rem; min-height: 3rem; }
-.preview-card { width: 100%; max-width: min(240px, 23vh * 0.718); margin: 0 auto; }
-.preview-card img { display: block; width: 100%; border-radius: 4.5%; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+/* The card preview floats over the top of the sidebar while you point at a card (see showPreview).
+   Its width comes from the size setting (--pw) but never so tall that it runs off the screen. */
+.preview {
+  --pw: calc(clamp(240px, 21vw, 320px) - 1.2rem); /* S: the sidebar's width */
+  position: fixed; top: 0.6rem; right: 0.6rem; z-index: 1600; pointer-events: none;
+  width: min(var(--pw), (100dvh - 6.5rem) * 0.718, 100vw - 2rem);
+  padding: 0.6rem 0.6rem 0.5rem; border-radius: 12px;
+  background: rgba(5, 14, 12, 0.94); border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  opacity: 0; visibility: hidden; transition: opacity 0.12s ease, visibility 0s 0.12s;
+}
+.preview.show { opacity: 1; visibility: visible; transition: opacity 0.08s ease; }
+.preview-card { width: 100%; }
+.preview-card img { display: block; width: 100%; border-radius: 4.5%; }
 .preview-card .text-face { --cw: 240px; aspect-ratio: 488 / 680; border-radius: 4.5%; }
-.preview-meta { margin: 0.5rem 0 0; font-size: 0.9rem; text-align: center; }
+.preview-meta { margin: 0.45rem 0 0; font-size: 0.9rem; text-align: center; }
+.preview .hint { margin: 0.45rem 0 0; text-align: center; }
 
 .controls { padding: 0.4rem 0.9rem 0.8rem; border-bottom: 1px solid var(--line); }
 .controls .row { margin-top: 0.5rem; }
@@ -883,8 +894,6 @@ span.who-am-i { cursor: default; }
 .field { margin: 0.3rem 0.6rem; }
 
 /* Sidebar: a little tighter so the game log keeps several lines on shorter screens. */
-.preview { padding: 0.7rem 0.9rem 0.3rem; }
-.preview-meta { margin-top: 0.3rem; }
 .controls .row { margin-top: 0.4rem; }
 .control-group { margin-top: 0.6rem; }
 .controls .check { margin-top: 0.5rem; }
@@ -895,10 +904,8 @@ span.who-am-i { cursor: default; }
 .hand .card { --cw: var(--hw); --ch: var(--hh); margin-left: calc(var(--hw) * -0.18 * min(1, max(0, (var(--n) - 7) / 5))); }
 .hand .card:first-child { margin-left: 0; }
 
-body.preview-S .preview-card { max-width: min(200px, 20vh * 0.718); }
-body.preview-M .preview-card { max-width: min(260px, 27vh * 0.718); }
-body.preview-L .preview-card { max-width: min(350px, 44vh * 0.718); }
-body.preview-L .board { grid-template-columns: 1fr clamp(300px, 27vw, 390px); }
+body.preview-M .preview { --pw: 350px; }
+body.preview-L .preview { --pw: 460px; }
 
 .view-settings { display: grid; gap: 0.6rem; }
 .view-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.95rem; }
@@ -951,3 +958,14 @@ body.preview-L .board { grid-template-columns: 1fr clamp(300px, 27vw, 390px); }
 }
 .prompt-group legend { padding: 0 0.35rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone-dim); }
 .prompt-group .field-label { margin-top: 0.6rem; font-size: 0.9rem; }
+
+/* ---------- token stacks ("×12": one card standing for several identical tokens) ---------- */
+.stack-badge {
+  position: absolute; top: 40%; left: 50%; transform: translateX(-50%); z-index: 2;
+  min-width: 2.4em; padding: 0.1rem 0.5rem; border: 0; border-radius: 999px; cursor: pointer;
+  font: 700 max(0.8rem, calc(var(--cw) * 0.2)) / 1.15 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: rgba(10, 10, 10, 0.88); color: var(--bone); box-shadow: 0 0 0 2px rgba(236, 229, 211, 0.55);
+}
+.stack-badge:hover:not(:disabled) { box-shadow: 0 0 0 2px var(--brass); }
+.stack-badge:disabled { cursor: default; opacity: 1; }
+.card.tapped .stack-badge { transform: translateX(-50%) rotate(-90deg); }

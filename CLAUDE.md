@@ -72,10 +72,16 @@ busy, an old server or stand-in is still running.
 
 ## Gotchas found the hard way
 
+- Prompt dialogs are drawn once (`renderModal` skips redrawing an open `prompt`): every game update calls
+  `render()`, and redrawing a form wiped what the player had typed (token edits were lost that way).
+- Token stacks: a token `Card` has `qty` (absent = 1); one card stands for that many identical tokens.
 - Modal state objects use `m.type` for the modal kind: store other values under other names
   (a library filter once overwrote it and closed the window).
-- `.side` (game sidebar) grid rows must match its children (preview, controls, log, chat).
-- The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`);
+- `.side` (game sidebar) grid rows must match its children (controls, log, chat). The card preview is not in
+  the sidebar: it is a fixed overlay (`#preview`) shown on hover. Size it by width, never by `vh` caps (those
+  kept it ~155px wide on laptops through several attempts).
+- The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`), starting
+  only once the pointer is on the strip (then kept while on a raised card);
   drag ghosts must clear the magnified transform.
 - Counter badges: click adds one; right-click or shift-click removes one (so right-clicking a badge does
   not open the card menu).
@@ -85,6 +91,6 @@ busy, an old server or stand-in is still running.
 ## Open work (see ROADMAP.md for the full list)
 
 - Next: point at a card (glow on both screens); sketch pad under the library (named counters + note);
-  token stacks and a token picker with Scryfall art; in-app controls and shortcuts guide.
+  a token picker with Scryfall art; in-app controls and shortcuts guide.
 - Owner side: set up sign-in restrictions (Cloudflare Access emails and/or Google `ALLOWED_EMAILS`).
 - Later milestones: voice, then video (Cloudflare Realtime SFU).

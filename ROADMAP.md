@@ -51,7 +51,8 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Practice bot: play a simple bot with a Commander deck to try changes without a second account (always unranked)
 - ⬜ Point at a card: any visible card glows on both screens for a few seconds, with a log line
 - ⬜ Sketch pad under your library: named counters you create (Squirrels, Experience, Storm…) plus a free-form note (e.g. floating mana); visible to both players
-- ⬜ Token revamp: stacks ("Squirrel ×37") with add/remove and partial tapping (splits into tapped and untapped stacks); quick picker for common tokens with Scryfall token art
+- ✅ Token stacks: several tokens make one card with a count ("Squirrel ×37"); add/remove from the badge or menu; edit the count; split a stack (e.g. to tap or attack with some)
+- ⬜ Token picker: quick picker for common tokens with Scryfall token art
 - ⬜ Password resets: an owner script that sets a temporary password for a player (and signs them out everywhere), plus a "Change password" screen so players can replace it; there is no email, so no "forgot password" link. Not needed if password accounts are turned off in favor of Access or Google
 
 **To finish**

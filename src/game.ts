@@ -36,6 +36,7 @@ export interface Card {
   token: boolean;
   noUntap?: boolean; // "doesn't untap during your untap step"
   pt?: string; // power/toughness set by a player (pumped, shrunk…); shown instead of the printed one
+  qty?: number; // tokens only: how many identical tokens this one card stands for (a stack); absent means 1
 }
 
 export interface DeckList {
@@ -175,6 +176,12 @@ export function addPlayer(state: GameState, userId: string, name: string): Playe
   state.players.push(p);
   state.players.sort((a, b) => a.seat - b.seat);
   return p;
+}
+
+const MAX_STACK = 999;
+
+function setQty(c: Card, q: number) {
+  if (q > 1) c.qty = q; else delete c.qty;
 }
 
 function newCard(def: CardDef, token = false): Card {
@@ -484,7 +491,8 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       me.zones[from].splice(index, 1);
 
       if (card.token && to !== 'battlefield') {
-        log(state, `removed token ${cardName(card)}`, me);
+        const q = card.qty ?? 1;
+        log(state, q > 1 ? `removed ${q} ${cardName(card)} tokens` : `removed token ${cardName(card)}`, me);
         return { changed: true };
       }
 
@@ -586,9 +594,17 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         if (fmt(next) !== fmt(loc.card.counters)) counterNote = `; counters: ${fmt(next)}`;
         loc.card.counters = next;
       }
+      // How many tokens the stack stands for.
+      let qtyNote = '';
+      if (a.qty !== undefined) {
+        const was = loc.card.qty ?? 1;
+        const q = int(a.qty, 1, MAX_STACK, was);
+        if (q !== was) qtyNote = `; ${was} → ${q} in the stack`;
+        setQty(loc.card, q);
+      }
       loc.card.def = def;
       const after = `${name}${shownPt(loc.card) ? ` ${shownPt(loc.card)}` : ''}`;
-      log(state, `${before === after ? `edited token ${name}` : `changed token ${before} to ${after}`}${counterNote}`, me);
+      log(state, `${before === after ? `edited token ${name}` : `changed token ${before} to ${after}`}${counterNote}${qtyNote}`, me);
       return { changed: true };
     }
     // Pumped or shrunk: show a different power/toughness on any of your cards on the battlefield.
@@ -650,21 +666,49 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       return { changed: true };
     }
     case 'token': {
+      // Several identical tokens make one card that shows how many it stands for ("Soldier ×12").
       const name = String(a.name ?? '').trim().slice(0, 60);
       if (!name) return { changed: false, error: 'Give the token a name.' };
-      const count = int(a.count, 1, 20, 1);
-      if (me.zones.battlefield.length + count > 300) return { changed: false, error: 'The battlefield is full.' };
+      const count = int(a.count, 1, MAX_STACK, 1);
+      if (me.zones.battlefield.length >= 300) return { changed: false, error: 'The battlefield is full.' };
       const def: CardDef = { name, typeLine: `Token ${String(a.typeLine ?? 'Creature').trim().slice(0, 40) || 'Creature'}` };
       const pt = String(a.pt ?? '').trim().slice(0, 12);
       if (pt) def.pt = pt;
-      for (let i = 0; i < count; i++) {
-        const c = newCard(def, true);
-        const spot = autoPlace(me, def);
-        c.x = spot.x;
-        c.y = spot.y;
-        me.zones.battlefield.push(c);
-      }
+      const c = newCard(def, true);
+      setQty(c, count);
+      const spot = autoPlace(me, def);
+      c.x = spot.x;
+      c.y = spot.y;
+      me.zones.battlefield.push(c);
       log(state, `created ${count} ${name}${pt ? ` ${pt}` : ''} token${count === 1 ? '' : 's'}`, me);
+      return { changed: true };
+    }
+    // Add to or take from a token stack. It never goes below one; removing the last is "Remove token".
+    case 'stack': {
+      const loc = findCard(me, a.cardId);
+      if (!loc || loc.zone !== 'battlefield' || !loc.card.token) return { changed: false, error: 'Only tokens on the battlefield can be stacked.' };
+      const was = loc.card.qty ?? 1;
+      const q = Math.min(MAX_STACK, Math.max(1, was + int(a.delta, -MAX_STACK, MAX_STACK, 0)));
+      if (q === was) return { changed: false };
+      setQty(loc.card, q);
+      log(state, `${q > was ? 'added' : 'removed'} ${Math.abs(q - was)} ${cardName(loc.card)} token${Math.abs(q - was) === 1 ? '' : 's'} (now ${q})`, me);
+      return { changed: true };
+    }
+    // Move some tokens off a stack into a stack of their own (to attack with some, tap some…).
+    case 'splitStack': {
+      const loc = findCard(me, a.cardId);
+      if (!loc || loc.zone !== 'battlefield' || !loc.card.token) return { changed: false, error: 'Only token stacks can be split.' };
+      const was = loc.card.qty ?? 1;
+      if (was < 2) return { changed: false, error: 'There is only one token here.' };
+      if (me.zones.battlefield.length >= 300) return { changed: false, error: 'The battlefield is full.' };
+      const n = int(a.n, 1, was - 1, 1);
+      const c: Card = { ...loc.card, id: newId(), counters: { ...loc.card.counters } };
+      setQty(c, n);
+      setQty(loc.card, was - n);
+      c.x = clamp01(loc.card.x + 0.05, 0.5);
+      c.y = clamp01(loc.card.y + 0.06, 0.5);
+      me.zones.battlefield.push(c);
+      log(state, `split ${n} ${cardName(c)} token${n === 1 ? '' : 's'} off a stack of ${was}`, me);
       return { changed: true };
     }
     case 'life': {
@@ -831,7 +875,7 @@ function chat(state: GameState, me: Player, a: any): ActionResult {
 // ---------- what each player is allowed to see ----------
 
 function publicCard(c: Card) {
-  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token, noUntap: !!c.noUntap, pt: c.pt ?? null };
+  return { id: c.id, def: c.def, tapped: c.tapped, faceDown: c.faceDown, transformed: c.transformed, counters: c.counters, x: c.x, y: c.y, token: c.token, noUntap: !!c.noUntap, pt: c.pt ?? null, qty: c.qty ?? 1 };
 }
 
 function hiddenCard(c: Card) {

@@ -1200,8 +1200,8 @@ function renderGame() {
               })),
             h('div', { class: 'hand', id: 'my-hand', dataset: { drop: 'hand' }, 'aria-label': 'Your hand' }),
             h('footer', { class: 'seat-bar', id: 'my-bar' }))),
+        h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }),
         h('aside', { class: 'side' },
-          h('div', { class: 'preview', id: 'preview' }, h('p', { class: 'hint' }, 'Hover a card to see it up close. Only you see this.')),
           h('div', { class: 'controls', id: 'controls' }),
           h('ol', { class: 'log', id: 'log', 'aria-label': 'Game log' }),
           h('form', {
@@ -1310,7 +1310,7 @@ function piles(p) {
       'aria-label': `${label}, ${opts.count ?? cards.length} cards`,
       onclick: opts.onclick ?? (() => cards.length && openModal({ type: 'zone', playerId: p.id, zone })),
       oncontextmenu: opts.menu ? (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, opts.menu()); } : null,
-      onmouseenter: top && !opts.back ? () => showPreview(top, mine) : null,
+      onmouseenter: top && !opts.back ? () => showPreview(top, mine) : hidePreview,
     },
     opts.back
       ? (opts.count ? h('span', { class: 'card-back' }) : null)
@@ -1410,14 +1410,15 @@ function resetHand() {
   }
 }
 
-// Track the pointer over the hand strip and a little above it, where the magnified cards reach.
+// The effect starts only once the pointer is on the hand strip itself, so the bottom of the
+// battlefield stays usable. Once started, it keeps going while the pointer is on a raised card.
 window.addEventListener('pointermove', (e) => {
   const hand = $('#my-hand');
   if (!hand || !canMagnify() || e.pointerType === 'touch') return;
   const box = hand.getBoundingClientRect();
-  const reach = box.height * 1.6;
-  const inside = e.clientY >= box.top - reach && e.clientY <= box.bottom + 4 && e.clientX >= box.left && e.clientX <= box.right;
-  if (inside) {
+  const onStrip = e.clientY >= box.top && e.clientY <= box.bottom + 4 && e.clientX >= box.left && e.clientX <= box.right;
+  const onRaisedCard = handPointer.active && e.target instanceof Element && !!e.target.closest('#my-hand .card');
+  if (onStrip || onRaisedCard) {
     handPointer.active = true;
     handPointer.x = e.clientX;
     magnifyHand(e.clientX);
@@ -1545,7 +1546,7 @@ function viewSettings() {
     row('Table cards', 'table'),
     row('Hand cards', 'hand'),
     row('Card preview', 'preview'),
-    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat; a larger preview leaves less room for the game log.'));
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. The card preview shows while you point at a card; larger sizes reach past the sidebar onto the table.'));
 }
 
 function maybeAutoBegin() {
@@ -1607,17 +1608,33 @@ function counterLabel(kind, n) {
   return `${kind} ${n}`;
 }
 
+// A token stack: one card standing for several identical tokens. Click adds one; right-click or
+// shift-click removes one (like counter badges).
+function stackBadge(c, mine) {
+  return h('button', {
+    type: 'button',
+    class: 'stack-badge',
+    disabled: !mine,
+    title: mine ? `${c.qty} tokens. Click to add one, right-click or shift-click to remove one` : `${c.qty} tokens`,
+    'aria-label': `${c.qty} tokens`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); send({ t: 'stack', cardId: c.id, delta: e.shiftKey ? -1 : 1 }); },
+    oncontextmenu: (e) => { e.preventDefault(); e.stopPropagation(); send({ t: 'stack', cardId: c.id, delta: -1 }); },
+  }, `×${c.qty}`);
+}
+
 function cardEl(c, ctx) {
   const el = h('div', {
     class: cls('card', c.tapped && 'tapped', c.token && 'is-token', c.faceDown && 'face-down', ctx.mine && 'own'),
     dataset: { id: c.id },
     tabindex: ctx.mine ? 0 : null,
     role: ctx.mine ? 'button' : null,
-    'aria-label': c.faceDown && !ctx.mine ? 'Face-down card' : `${displayName(c)}${c.tapped ? ', tapped' : ''}`,
+    'aria-label': c.faceDown && !ctx.mine ? 'Face-down card' : `${displayName(c)}${(c.qty ?? 1) > 1 ? `, ${c.qty} tokens` : ''}${c.tapped ? ', tapped' : ''}`,
   },
   cardFace(c),
   c.faceDown && ctx.mine ? h('span', { class: 'peek-tag' }, 'Face down') : null,
   c.token ? h('span', { class: 'token-tag' }, 'Token') : null,
+  c.token && (c.qty ?? 1) > 1 ? stackBadge(c, ctx.mine) : null,
   c.noUntap ? h('span', { class: 'nountap-tag', title: "Doesn't untap during untap" }, 'No untap') : null,
   c.pt && !c.faceDown && (c.transformed ? c.def.backImageSmall ?? c.def.backImage : c.def.imageSmall ?? c.def.image)
     ? h('span', { class: 'pt-badge', title: c.def.pt ? `Printed ${c.def.pt}` : 'Power/toughness' }, c.pt)
@@ -1667,25 +1684,45 @@ function tap(c) {
 
 // ---------------------------------------------------------------- card preview (sidebar, local only)
 
+// A large card floats over the top of the sidebar while the pointer is on a card, and goes away when
+// the pointer leaves it. It ignores the pointer, so it never gets in the way of what is underneath.
+let previewHide = 0;
+
 function showPreview(c, mine) {
   const el = $('#preview');
   if (!el) return;
+  clearTimeout(previewHide);
+  el.classList.add('show');
   const hidden = c.faceDown && !mine;
   const face = hidden ? h('span', { class: 'card-back big' }) : cardFace({ ...c, faceDown: false }, 'normal');
   el.replaceChildren(
     h('div', { class: 'preview-card' }, face),
     hidden ? h('p', { class: 'hint' }, 'Face-down card') : h('p', { class: 'preview-meta' },
       h('b', null, displayName(c)),
+      (c.qty ?? 1) > 1 ? h('span', { class: 'preview-pt' }, ` ×${c.qty}`) : '',
       c.def.backName ? h('span', { class: 'hint' }, c.transformed ? ` Front: ${c.def.name}` : ` Back: ${c.def.backName}`) : '',
       c.pt ? h('span', { class: 'preview-pt' }, ` Now ${c.pt}${c.def.pt && c.def.pt !== c.pt ? ` (printed ${c.def.pt})` : ''}`) : ''));
 }
 
+function hidePreview() {
+  clearTimeout(previewHide);
+  // A short wait, so moving across the gap between two cards doesn't flicker.
+  previewHide = setTimeout(() => $('#preview')?.classList.remove('show'), 90);
+}
+
+const PREVIEWABLE = '.card, .pile, .reveal-card, .grid-face';
+document.addEventListener('pointerover', (e) => {
+  if (!(e.target instanceof Element) || !e.target.closest(PREVIEWABLE)) hidePreview();
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target instanceof Element && e.target.closest(PREVIEWABLE)) hidePreview();
+});
 
 // ---------------------------------------------------------------- drag and drop
 
 function makeDraggable(el, card, zone) {
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest('.counter')) return;
+    if (e.button !== 0 || e.target.closest('.counter, .stack-badge')) return;
     const start = { x: e.clientX, y: e.clientY };
     const rect = el.getBoundingClientRect();
     const off = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -1846,11 +1883,13 @@ function cardMenu(c, zone) {
     hasCounters ? { label: 'Remove all counters', run: () => send({ t: 'clearCounters', cardId: c.id }) } : null,
     '-',
     c.token ? { label: 'Edit token…', run: () => editTokenPrompt(c) } : null,
+    c.token ? { label: 'Add tokens to this stack…', run: () => stackPrompt(c) } : null,
+    c.token && (c.qty ?? 1) > 1 ? { label: 'Split stack…', run: () => splitPrompt(c) } : null,
     { label: 'Set power/toughness…', run: () => setPtPrompt(c) },
     { label: 'Create token copy', run: () => send({ t: 'copy', cardId: c.id }) },
     '-',
     ...(c.token
-      ? [{ label: 'Remove token', danger: true, run: mv(c, 'graveyard') }]
+      ? [{ label: (c.qty ?? 1) > 1 ? `Remove all ${c.qty} tokens` : 'Remove token', danger: true, run: mv(c, 'graveyard') }]
       : [
         { label: 'Return to hand', run: mv(c, 'hand') },
         { label: 'Put into graveyard', run: mv(c, 'graveyard') },
@@ -1956,6 +1995,7 @@ function editTokenPrompt(c) {
     { name: 'name', label: 'Name', value: c.def.name },
     { name: 'pt', label: 'Power/toughness', value: c.pt ?? c.def.pt ?? '', placeholder: 'Leave empty for non-creatures' },
     { name: 'typeLine', label: 'Type', value: type, list: ['Creature', 'Artifact', 'Artifact Creature', 'Enchantment', 'Enchantment Creature', 'Treasure', 'Food', 'Clue'] },
+    { name: 'qty', label: 'How many tokens', type: 'number', value: c.qty ?? 1, min: 1, max: 999 },
     ...kinds.map((k) => ({ name: `ctr:${k}`, label: label(k), type: 'number', value: current[k] ?? 0, min: 0, max: 999, group: 'counters' })),
     { name: 'newKind', label: 'Add another counter', value: '', placeholder: 'e.g. charge, shield, oil', list: ['charge', 'loyalty', 'lore', 'shield', 'stun', 'time', 'oil', 'quest', 'flying', 'deathtouch'], group: 'counters' },
     { name: 'newCount', label: 'How many', type: 'number', value: 1, min: 1, max: 999, group: 'counters' },
@@ -1964,8 +2004,21 @@ function editTokenPrompt(c) {
     for (const [key, val] of Object.entries(v)) if (key.startsWith('ctr:')) counters[key.slice(4)] = parseInt(val, 10) || 0;
     const extra = String(v.newKind ?? '').trim();
     if (extra) counters[extra] = (counters[extra] ?? 0) + (parseInt(v.newCount, 10) || 1);
-    send({ t: 'editToken', cardId: c.id, name: v.name, pt: v.pt, typeLine: v.typeLine, counters });
+    send({ t: 'editToken', cardId: c.id, name: v.name, pt: v.pt, typeLine: v.typeLine, counters, qty: parseInt(v.qty, 10) || 1 });
   });
+}
+
+function stackPrompt(c) {
+  prompt(`Add ${c.def.name} tokens`, [
+    { name: 'n', label: `How many more (now ${c.qty ?? 1})`, type: 'number', value: 1, min: 1, max: 998 },
+  ], 'Add', (v) => send({ t: 'stack', cardId: c.id, delta: parseInt(v.n, 10) || 1 }));
+}
+
+function splitPrompt(c) {
+  const q = c.qty ?? 1;
+  prompt(`Split ${q} ${c.def.name} tokens`, [
+    { name: 'n', label: 'How many to move into a stack of their own', type: 'number', value: 1, min: 1, max: q - 1 },
+  ], 'Split', (v) => send({ t: 'splitStack', cardId: c.id, n: Math.min(q - 1, Math.max(1, parseInt(v.n, 10) || 1)) }));
 }
 
 function setPtPrompt(c) {
@@ -1980,7 +2033,7 @@ function tokenPrompt() {
     { name: 'name', label: 'Name', value: '', placeholder: 'Soldier' },
     { name: 'pt', label: 'Power/toughness', value: '1/1', placeholder: 'Leave empty for non-creatures' },
     { name: 'typeLine', label: 'Type', value: 'Creature', list: ['Creature', 'Artifact', 'Artifact Creature', 'Enchantment', 'Treasure', 'Food', 'Clue'] },
-    { name: 'count', label: 'How many', type: 'number', value: 1, min: 1, max: 20 },
+    { name: 'count', label: 'How many (they share one card, with a count)', type: 'number', value: 1, min: 1, max: 999 },
   ], 'Create', (v) => send({ t: 'token', name: v.name, pt: v.pt, typeLine: v.typeLine, count: parseInt(v.count, 10) || 1 }));
 }
 
@@ -1988,6 +2041,11 @@ function renderModal() {
   const root = $('#modal-root');
   const m = S.modal;
   if (!m) return root.replaceChildren();
+  // A dialog you are filling in is drawn once: redrawing it on every game update would throw away
+  // what you've typed (edits to a token were lost whenever the other player, or the bot, did anything).
+  if (m.type === 'prompt' && root.dataset.drawn === 'prompt' && S.drawnModal === m && root.firstChild) return;
+  S.drawnModal = m;
+  root.dataset.drawn = m.type;
   let body;
   try {
     body = modalBody(m);
