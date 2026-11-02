@@ -958,3 +958,14 @@ body.preview-L .preview { --pw: 460px; }
 }
 .prompt-group legend { padding: 0 0.35rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bone-dim); }
 .prompt-group .field-label { margin-top: 0.6rem; font-size: 0.9rem; }
+
+/* ---------- token stacks ("×12": one card standing for several identical tokens) ---------- */
+.stack-badge {
+  position: absolute; top: 40%; left: 50%; transform: translateX(-50%); z-index: 2;
+  min-width: 2.4em; padding: 0.1rem 0.5rem; border: 0; border-radius: 999px; cursor: pointer;
+  font: 700 max(0.8rem, calc(var(--cw) * 0.2)) / 1.15 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: rgba(10, 10, 10, 0.88); color: var(--bone); box-shadow: 0 0 0 2px rgba(236, 229, 211, 0.55);
+}
+.stack-badge:hover:not(:disabled) { box-shadow: 0 0 0 2px var(--brass); }
+.stack-badge:disabled { cursor: default; opacity: 1; }
+.card.tapped .stack-badge { transform: translateX(-50%) rotate(-90deg); }

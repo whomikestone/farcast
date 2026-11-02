@@ -72,6 +72,9 @@ busy, an old server or stand-in is still running.
 
 ## Gotchas found the hard way
 
+- Prompt dialogs are drawn once (`renderModal` skips redrawing an open `prompt`): every game update calls
+  `render()`, and redrawing a form wiped what the player had typed (token edits were lost that way).
+- Token stacks: a token `Card` has `qty` (absent = 1); one card stands for that many identical tokens.
 - Modal state objects use `m.type` for the modal kind: store other values under other names
   (a library filter once overwrote it and closed the window).
 - `.side` (game sidebar) grid rows must match its children (controls, log, chat). The card preview is not in
@@ -88,6 +91,6 @@ busy, an old server or stand-in is still running.
 ## Open work (see ROADMAP.md for the full list)
 
 - Next: point at a card (glow on both screens); sketch pad under the library (named counters + note);
-  token stacks and a token picker with Scryfall art; in-app controls and shortcuts guide.
+  a token picker with Scryfall art; in-app controls and shortcuts guide.
 - Owner side: set up sign-in restrictions (Cloudflare Access emails and/or Google `ALLOWED_EMAILS`).
 - Later milestones: voice, then video (Cloudflare Realtime SFU).
