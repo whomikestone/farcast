@@ -218,6 +218,8 @@ so a player can't push arbitrary images into their opponent's browser.
 | Action | How |
 | --- | --- |
 | Play a card | Double-click it in your hand, or drag it onto the battlefield |
+| Cast your commander | Drag it from your command zone onto the battlefield (or into your hand), or right-click it → Play; click the command zone to see both partners |
+| Take the top card of your graveyard or exile | Drag it out of the pile (to the battlefield, your hand, another pile, or your library), or right-click the pile for options; click the pile to see every card |
 | Play face down | Right-click → Play face down, or hold Alt while dropping |
 | Tap / untap | Click a card on the battlefield |
 | Card menu (counters, copy, transform, move) | Right-click, or long-press on touch |
@@ -228,7 +230,8 @@ so a player can't push arbitrary images into their opponent's browser.
 | Look at the top card | Sidebar → Library → Top card, or press T |
 | Reveal cards to your opponent | In "Look at top…": Reveal on a card, or Reveal all; from your hand: card menu → Reveal to opponent; whole hand: ⋯ → Reveal your hand |
 | Put the rest on the bottom | In "Look at top…": In a random order, or arrange with ← → and choose In this order |
-| Card and preview sizes | Sidebar → View… (Small / Medium / Large; only on your screen). The card preview shows at the top right while you point at a card |
+| Card and preview sizes | Sidebar → View… (Small / Medium / Large; only on your screen) |
+| Card preview style | Sidebar → View… → Preview style: **Pop up** shows a large card at the top right while you point at one; **Pinned** widens the sidebar to the preview size and keeps the last card you pointed at there until you point at another |
 | See a card in your hand up close | Move the pointer across your hand: cards magnify like the Mac Dock (off when your system is set to reduce motion) |
 | Keep a card tapped through untap | Card menu → "Doesn't untap during untap" (shows a "No untap" marker) |
 | Change a token after making it | Token's card menu → Edit token… (name, power/toughness, type, how many tokens, and counter counts; 0 removes a counter) |

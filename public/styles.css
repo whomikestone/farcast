@@ -377,7 +377,8 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
   display: block; width: 100%; height: 100%; border-radius: var(--card-r); object-fit: cover;
 }
 .card.tapped { transform: rotate(90deg); }
-.card.drag-source { opacity: 0.25; }
+.card.drag-source, .pile.drag-source { opacity: 0.25; }
+.pile-graveyard[data-drop]:not(.empty), .pile-exile[data-drop]:not(.empty), .pile-command[data-drop]:not(.empty) { cursor: grab; }
 .drag-ghost {
   position: fixed !important; z-index: 1000; pointer-events: none; cursor: grabbing;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
@@ -467,6 +468,27 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
 .preview-meta { margin: 0.45rem 0 0; font-size: 0.9rem; text-align: center; }
 .preview .hint { margin: 0.45rem 0 0; text-align: center; }
 
+/* Pinned preview: the sidebar widens to the pop-up card's width (S/M/L) and the card fills it, staying
+   until you point at another card. The sidebar becomes a flex column so the card gives up height
+   (shrinking, never cropping) before the game log drops below a few lines. */
+body.preview-pinned { --sw: clamp(240px, 21vw, 320px); }
+body.preview-pinned.preview-M { --sw: min(calc(350px + 1.2rem), 40vw); }
+body.preview-pinned.preview-L { --sw: min(calc(460px + 1.2rem), 45vw); }
+body.preview-pinned .board { grid-template-columns: 1fr var(--sw); }
+body.preview-pinned .side { display: flex; flex-direction: column; }
+body.preview-pinned .controls, body.preview-pinned .chat { flex: none; }
+body.preview-pinned .log { flex: 1 1 0; min-height: 7.5rem; }
+body.preview-pinned .preview {
+  position: static; width: auto; opacity: 1; visibility: visible; transition: none; flex: 0 1 auto; min-height: 0;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0.6rem 0.6rem 0.3rem; border: 0; border-radius: 0; background: none; box-shadow: none;
+}
+body.preview-pinned .preview-card { flex: 0 1 auto; min-height: 0; display: flex; justify-content: center; }
+body.preview-pinned .preview-card img, body.preview-pinned .preview-card .text-face, body.preview-pinned .preview-card .card-back {
+  width: auto; max-width: 100%; height: auto; max-height: 100%; aspect-ratio: 488 / 680; object-fit: contain;
+}
+body.preview-pinned .preview-meta { margin-top: 0.3rem; flex: none; }
+
 .controls { padding: 0.4rem 0.9rem 0.8rem; border-bottom: 1px solid var(--line); }
 .controls .row { margin-top: 0.5rem; }
 
@@ -485,6 +507,8 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
   .board { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .side { grid-template-rows: auto; grid-template-columns: 1fr; max-height: 34vh; border-left: 0; border-top: 1px solid var(--line); }
   .preview { display: none; }
+  body.preview-pinned .board { grid-template-columns: 1fr; }
+  body.preview-pinned .side { display: grid; grid-template-rows: auto; }
   .log { max-height: 16vh; }
 }
 

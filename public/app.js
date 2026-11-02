@@ -1200,8 +1200,10 @@ function renderGame() {
               })),
             h('div', { class: 'hand', id: 'my-hand', dataset: { drop: 'hand' }, 'aria-label': 'Your hand' }),
             h('footer', { class: 'seat-bar', id: 'my-bar' }))),
-        h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }),
         h('aside', { class: 'side' },
+          // Pop up: floats over the sidebar while you point at a card (position: fixed, so not a grid row).
+          // Pinned: the sidebar's first row, keeping the last card you pointed at.
+          h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }, h('p', { class: 'hint' }, 'Point at a card to see it here. Only you see this.')),
           h('div', { class: 'controls', id: 'controls' }),
           h('ol', { class: 'log', id: 'log', 'aria-label': 'Game log' }),
           h('form', {
@@ -1271,7 +1273,7 @@ function seatBar(p) {
       Object.entries(p.counters).filter(([k, v]) => k !== 'poison' && v > 0).map(([k, v]) =>
         tracker(k[0].toUpperCase() + k.slice(1), v, mine ? (d) => send({ t: 'playerCounter', kind: k, delta: d }) : null))),
     h('div', { class: 'counts' },
-      mine ? null : h('span', { class: 'hand-count', title: 'Cards in hand' }, h('span', { class: 'mini-back', 'aria-hidden': 'true' }), `${p.handCount} in hand`),
+      h('span', { class: 'hand-count', title: 'Cards in hand' }, h('span', { class: 'mini-back', 'aria-hidden': 'true' }), `${p.handCount} in hand`),
       h('span', null, `${p.libraryCount} in library`)),
   ];
 }
@@ -1299,6 +1301,9 @@ function bumpLife(pid, d) {
   renderGame();
 }
 
+const PILE_DRAG = new Set(['graveyard', 'exile', 'command']);
+const topMenu = (cards, zone) => (cards.length ? () => cardMenu(cards[cards.length - 1], zone) : null);
+
 function piles(p) {
   const mine = isMine(p.id);
   const pile = (zone, label, cards, opts = {}) => {
@@ -1316,6 +1321,11 @@ function piles(p) {
       ? (opts.count ? h('span', { class: 'card-back' }) : null)
       : top ? cardFace(top) : null,
     h('span', { class: 'pile-label' }, label, h('b', null, opts.count ?? cards.length)));
+    // The top card of your graveyard, exile, or command zone can be dragged straight out of the pile.
+    if (mine && top && PILE_DRAG.has(zone)) {
+      makeDraggable(el, top, zone);
+      el.title = `Drag the top card out, right-click for options, or click to see your whole ${label.toLowerCase()}.`;
+    }
     return el;
   };
   const libPile = pile('library', 'Library', [], {
@@ -1332,9 +1342,9 @@ function piles(p) {
           onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.right + 4, r.top, libraryMenu()); },
         }, '⋯'))
       : libPile,
-    pile('graveyard', 'Graveyard', p.graveyard),
-    pile('exile', 'Exile', p.exile),
-    pile('command', 'Command', p.command),
+    pile('graveyard', 'Graveyard', p.graveyard, { menu: mine ? topMenu(p.graveyard, 'graveyard') : null }),
+    pile('exile', 'Exile', p.exile, { menu: mine ? topMenu(p.exile, 'exile') : null }),
+    pile('command', 'Command', p.command, { menu: mine ? topMenu(p.command, 'command') : null }),
   ];
 }
 
@@ -1523,12 +1533,13 @@ const VIEW_SCALES = {
 };
 
 function applyView() {
-  const v = { table: 'M', hand: 'M', preview: 'M', ...store.get('view', {}) };
+  const v = { table: 'M', hand: 'M', preview: 'M', previewMode: 'popup', ...store.get('view', {}) };
   const root = document.documentElement;
   root.style.setProperty('--table-scale', VIEW_SCALES.table[v.table] ?? 1);
   root.style.setProperty('--hand-scale', VIEW_SCALES.hand[v.hand] ?? 1.2);
   document.body.classList.remove('preview-S', 'preview-M', 'preview-L');
   document.body.classList.add(`preview-${v.preview}`);
+  document.body.classList.toggle('preview-pinned', v.previewMode === 'pinned');
   return v;
 }
 
@@ -1546,7 +1557,10 @@ function viewSettings() {
     row('Table cards', 'table'),
     row('Hand cards', 'hand'),
     row('Card preview', 'preview'),
-    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. The card preview shows while you point at a card; larger sizes reach past the sidebar onto the table.'));
+    h('div', { class: 'view-row' },
+      h('span', null, 'Preview style'),
+      segmented('Preview style', [['popup', 'Pop up'], ['pinned', 'Pinned']], v.previewMode, set('previewMode'))),
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. Pop up shows a large card while you point at one; larger sizes reach past the sidebar onto the table. Pinned widens the sidebar to the preview size and keeps the last card you pointed at there until you point at another; on shorter screens the card shrinks to leave room for the game log.'));
 }
 
 function maybeAutoBegin() {
@@ -1684,8 +1698,9 @@ function tap(c) {
 
 // ---------------------------------------------------------------- card preview (sidebar, local only)
 
-// A large card floats over the top of the sidebar while the pointer is on a card, and goes away when
-// the pointer leaves it. It ignores the pointer, so it never gets in the way of what is underneath.
+// Pop up (default): a large card floats over the top of the sidebar while the pointer is on a card, and
+// goes away when the pointer leaves it. It ignores the pointer, so it never gets in the way of what is
+// underneath. Pinned: the card sits in the top of the sidebar and stays until you point at another.
 let previewHide = 0;
 
 function showPreview(c, mine) {
@@ -1706,6 +1721,7 @@ function showPreview(c, mine) {
 
 function hidePreview() {
   clearTimeout(previewHide);
+  if (document.body.classList.contains('preview-pinned')) return;
   // A short wait, so moving across the gap between two cards doesn't flicker.
   previewHide = setTimeout(() => $('#preview')?.classList.remove('show'), 90);
 }
@@ -1739,6 +1755,7 @@ function makeDraggable(el, card, zone) {
       if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 6) {
         clearTimeout(longPress);
         ghost = el.cloneNode(true);
+        ghost.querySelector('.pile-label')?.remove(); // dragging out of a pile shows just the card
         ghost.style.transform = '';
         ghost.style.zIndex = '';
         resetHand();
@@ -1867,6 +1884,26 @@ function cardMenu(c, zone) {
       { label: 'Put on top of library', run: mv(c, 'library', { pos: 'top' }) },
       { label: 'Put on bottom of library', run: mv(c, 'library', { pos: 'bottom' }) },
       { label: 'Put into library at position…', run: () => libraryPositionPrompt(c) },
+      { label: 'Move to command zone', run: mv(c, 'command') },
+    ];
+  }
+  if (zone === 'command') {
+    return [
+      { label: 'Play', hint: 'Drag', run: mv(c, 'battlefield') },
+      { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
+      '-',
+      { label: 'Put into hand', run: mv(c, 'hand') },
+    ];
+  }
+  if (zone === 'graveyard' || zone === 'exile') {
+    return [
+      { label: 'Play', hint: 'Drag', run: mv(c, 'battlefield') },
+      { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
+      '-',
+      { label: 'Return to hand', run: mv(c, 'hand') },
+      zone === 'graveyard' ? { label: 'Exile', run: mv(c, 'exile') } : { label: 'Put into graveyard', run: mv(c, 'graveyard') },
+      { label: 'Put on top of library', run: mv(c, 'library', { pos: 'top' }) },
+      { label: 'Put on bottom of library', run: mv(c, 'library', { pos: 'bottom' }) },
       { label: 'Move to command zone', run: mv(c, 'command') },
     ];
   }
