@@ -219,6 +219,7 @@ so a player can't push arbitrary images into their opponent's browser.
 | --- | --- |
 | Play a card | Double-click it in your hand, or drag it onto the battlefield |
 | Cast your commander | Drag it from your command zone onto the battlefield (or into your hand), or right-click it → Play; click the command zone to see both partners |
+| Take the top card of your graveyard or exile | Drag it out of the pile (to the battlefield, your hand, another pile, or your library), or right-click the pile for options; click the pile to see every card |
 | Play face down | Right-click → Play face down, or hold Alt while dropping |
 | Tap / untap | Click a card on the battlefield |
 | Card menu (counters, copy, transform, move) | Right-click, or long-press on touch |

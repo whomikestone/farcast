@@ -1301,6 +1301,9 @@ function bumpLife(pid, d) {
   renderGame();
 }
 
+const PILE_DRAG = new Set(['graveyard', 'exile', 'command']);
+const topMenu = (cards, zone) => (cards.length ? () => cardMenu(cards[cards.length - 1], zone) : null);
+
 function piles(p) {
   const mine = isMine(p.id);
   const pile = (zone, label, cards, opts = {}) => {
@@ -1318,10 +1321,10 @@ function piles(p) {
       ? (opts.count ? h('span', { class: 'card-back' }) : null)
       : top ? cardFace(top) : null,
     h('span', { class: 'pile-label' }, label, h('b', null, opts.count ?? cards.length)));
-    // Your commander can be dragged straight out of the command zone (the top card, if there are two).
-    if (mine && zone === 'command' && top) {
-      makeDraggable(el, top, 'command');
-      el.title = 'Drag your commander onto the battlefield, or click to see the command zone.';
+    // The top card of your graveyard, exile, or command zone can be dragged straight out of the pile.
+    if (mine && top && PILE_DRAG.has(zone)) {
+      makeDraggable(el, top, zone);
+      el.title = `Drag the top card out, right-click for options, or click to see your whole ${label.toLowerCase()}.`;
     }
     return el;
   };
@@ -1339,9 +1342,9 @@ function piles(p) {
           onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.right + 4, r.top, libraryMenu()); },
         }, '⋯'))
       : libPile,
-    pile('graveyard', 'Graveyard', p.graveyard),
-    pile('exile', 'Exile', p.exile),
-    pile('command', 'Command', p.command, { menu: mine && p.command.length ? () => cardMenu(p.command[p.command.length - 1], 'command') : null }),
+    pile('graveyard', 'Graveyard', p.graveyard, { menu: mine ? topMenu(p.graveyard, 'graveyard') : null }),
+    pile('exile', 'Exile', p.exile, { menu: mine ? topMenu(p.exile, 'exile') : null }),
+    pile('command', 'Command', p.command, { menu: mine ? topMenu(p.command, 'command') : null }),
   ];
 }
 
@@ -1890,6 +1893,18 @@ function cardMenu(c, zone) {
       { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
       '-',
       { label: 'Put into hand', run: mv(c, 'hand') },
+    ];
+  }
+  if (zone === 'graveyard' || zone === 'exile') {
+    return [
+      { label: 'Play', hint: 'Drag', run: mv(c, 'battlefield') },
+      { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
+      '-',
+      { label: 'Return to hand', run: mv(c, 'hand') },
+      zone === 'graveyard' ? { label: 'Exile', run: mv(c, 'exile') } : { label: 'Put into graveyard', run: mv(c, 'graveyard') },
+      { label: 'Put on top of library', run: mv(c, 'library', { pos: 'top' }) },
+      { label: 'Put on bottom of library', run: mv(c, 'library', { pos: 'bottom' }) },
+      { label: 'Move to command zone', run: mv(c, 'command') },
     ];
   }
   const hasCounters = Object.keys(c.counters).length > 0;

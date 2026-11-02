@@ -378,7 +378,7 @@ summary { cursor: pointer; color: var(--bone-dim); font-weight: 600; }
 }
 .card.tapped { transform: rotate(90deg); }
 .card.drag-source, .pile.drag-source { opacity: 0.25; }
-.pile-command[data-drop]:not(.empty) { cursor: grab; }
+.pile-graveyard[data-drop]:not(.empty), .pile-exile[data-drop]:not(.empty), .pile-command[data-drop]:not(.empty) { cursor: grab; }
 .drag-ghost {
   position: fixed !important; z-index: 1000; pointer-events: none; cursor: grabbing;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);

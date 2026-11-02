@@ -47,6 +47,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Larger hover preview in the sidebar, with a size setting
 - ✅ Preview style setting: pop up while pointing, or pinned in a sidebar as wide as the preview, until you point at another card (View…)
 - ✅ Drag your commander from the command zone onto the battlefield
+- ✅ Drag the top card of your graveyard or exile out of the pile; right-click a pile for options
 - ✅ Counters up to 999
 
 *Medium*
