@@ -81,7 +81,8 @@ export interface GameState {
   endedAt?: number;
   lastActivity: number;
   players: Player[];
-  turn: { activeId: string; number: number; begun: boolean } | null;
+  // number counts rounds: it goes up only when the player who went first (firstId) starts a turn again.
+  turn: { activeId: string; number: number; begun: boolean; firstId?: string } | null;
   winnerId?: string | null;
   // A reported result waiting for the other players to agree.
   pendingResult?: { by: string; winnerId: string | null; confirmedBy: string[]; at: number } | null;
@@ -382,7 +383,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         const first = state.players[randInt(state.players.length)];
         state.status = 'playing';
         state.startedAt = Date.now();
-        state.turn = { activeId: first.id, number: 1, begun: false };
+        state.turn = { activeId: first.id, number: 1, begun: false, firstId: first.id };
         log(state, `Game started. ${first.name} goes first.`, undefined, 'system');
         return { changed: true };
       }
@@ -459,7 +460,7 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
         untapped++;
       }
       // The player who goes first skips their first draw.
-      const skipDraw = state.turn.number === 1;
+      const skipDraw = state.turn.number === 1 && state.turn.activeId === (state.turn.firstId ?? state.turn.activeId);
       const drew = skipDraw ? 0 : draw(state, me, 1);
       state.turn.begun = true;
       const parts = [`untapped ${untapped}${stayed ? ` (${stayed} stayed tapped)` : ''}`, 'upkeep', skipDraw ? 'no draw on the first turn' : drew ? 'drew a card' : 'could not draw (library empty)'];
@@ -795,7 +796,11 @@ export function applyAction(state: GameState, playerId: string, a: any): ActionR
       if (!state.turn || !order.length) return { changed: false };
       const i = order.findIndex((p) => p.id === state.turn!.activeId);
       const next = order[(i + 1) % order.length];
-      state.turn = { activeId: next.id, number: state.turn.number + 1, begun: false };
+      const { firstId } = state.turn;
+      // A new round starts when play comes back to whoever went first (or wraps around, if they've left).
+      // Games started before rounds were counted have no firstId and count every turn, as they did.
+      const newRound = !firstId ? true : order.some((p) => p.id === firstId) ? next.id === firstId : i + 1 >= order.length;
+      state.turn = { activeId: next.id, number: state.turn.number + (newRound ? 1 : 0), begun: false, firstId };
       log(state, `Turn ${state.turn.number}: ${next.name}`, undefined, 'system');
       return { changed: true };
     }

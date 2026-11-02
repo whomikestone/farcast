@@ -387,8 +387,17 @@ if (first === a) {
 }
 await first.act({ t: 'beginTurn' }, (m) => m.state.turn.begun);
 if (first === a) assert.equal(a.mine.battlefield.find((c) => c.id === held.id).tapped, true, 'the untap step skips it too');
-await first.act({ t: 'passTurn' }, (m) => m.state.turn.number === 2);
-step('counters, copies, tokens, mill, graveyard shuffle, begin turn, pass turn');
+assert.match(first.state.log.at(-1).text, /no draw on the first turn/, 'whoever goes first skips their first draw');
+const nextUp = first === a ? b : a;
+await first.act({ t: 'passTurn' }, (m) => m.state.turn.activeId === nextUp.you);
+assert.equal(first.state.turn.number, 1, 'still turn 1: the second player plays turn 1 too');
+assert.match(first.state.log.at(-1).text, /^Turn 1: /);
+const handBefore = nextUp.mine.hand.length;
+await nextUp.act({ t: 'beginTurn' }, (m) => m.state.turn.begun);
+assert.equal(nextUp.mine.hand.length, handBefore + 1, 'the second player draws on their first turn');
+await nextUp.act({ t: 'passTurn' }, (m) => m.state.turn.activeId === first.you);
+assert.equal(nextUp.state.turn.number, 2, 'turn 2 starts when play comes back to whoever went first');
+step('counters, copies, tokens, mill, graveyard shuffle, begin turn, pass turn; turns count rounds, and only the first player skips a draw');
 
 // ================= results and records =================
 await b.act({ t: 'concede' }, (m) => m.state.status === 'ended');
