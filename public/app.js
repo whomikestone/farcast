@@ -1200,8 +1200,8 @@ function renderGame() {
               })),
             h('div', { class: 'hand', id: 'my-hand', dataset: { drop: 'hand' }, 'aria-label': 'Your hand' }),
             h('footer', { class: 'seat-bar', id: 'my-bar' }))),
+        h('div', { class: 'preview', id: 'preview', 'aria-hidden': 'true' }),
         h('aside', { class: 'side' },
-          h('div', { class: 'preview', id: 'preview' }, h('p', { class: 'hint' }, 'Hover a card to see it up close. Only you see this.')),
           h('div', { class: 'controls', id: 'controls' }),
           h('ol', { class: 'log', id: 'log', 'aria-label': 'Game log' }),
           h('form', {
@@ -1310,7 +1310,7 @@ function piles(p) {
       'aria-label': `${label}, ${opts.count ?? cards.length} cards`,
       onclick: opts.onclick ?? (() => cards.length && openModal({ type: 'zone', playerId: p.id, zone })),
       oncontextmenu: opts.menu ? (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, opts.menu()); } : null,
-      onmouseenter: top && !opts.back ? () => showPreview(top, mine) : null,
+      onmouseenter: top && !opts.back ? () => showPreview(top, mine) : hidePreview,
     },
     opts.back
       ? (opts.count ? h('span', { class: 'card-back' }) : null)
@@ -1546,7 +1546,7 @@ function viewSettings() {
     row('Table cards', 'table'),
     row('Hand cards', 'hand'),
     row('Card preview', 'preview'),
-    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat; a larger preview leaves less room for the game log.'));
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. The card preview shows while you point at a card; larger sizes reach past the sidebar onto the table.'));
 }
 
 function maybeAutoBegin() {
@@ -1668,9 +1668,15 @@ function tap(c) {
 
 // ---------------------------------------------------------------- card preview (sidebar, local only)
 
+// A large card floats over the top of the sidebar while the pointer is on a card, and goes away when
+// the pointer leaves it. It ignores the pointer, so it never gets in the way of what is underneath.
+let previewHide = 0;
+
 function showPreview(c, mine) {
   const el = $('#preview');
   if (!el) return;
+  clearTimeout(previewHide);
+  el.classList.add('show');
   const hidden = c.faceDown && !mine;
   const face = hidden ? h('span', { class: 'card-back big' }) : cardFace({ ...c, faceDown: false }, 'normal');
   el.replaceChildren(
@@ -1681,6 +1687,19 @@ function showPreview(c, mine) {
       c.pt ? h('span', { class: 'preview-pt' }, ` Now ${c.pt}${c.def.pt && c.def.pt !== c.pt ? ` (printed ${c.def.pt})` : ''}`) : ''));
 }
 
+function hidePreview() {
+  clearTimeout(previewHide);
+  // A short wait, so moving across the gap between two cards doesn't flicker.
+  previewHide = setTimeout(() => $('#preview')?.classList.remove('show'), 90);
+}
+
+const PREVIEWABLE = '.card, .pile, .reveal-card, .grid-face';
+document.addEventListener('pointerover', (e) => {
+  if (!(e.target instanceof Element) || !e.target.closest(PREVIEWABLE)) hidePreview();
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target instanceof Element && e.target.closest(PREVIEWABLE)) hidePreview();
+});
 
 // ---------------------------------------------------------------- drag and drop
 

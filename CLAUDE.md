@@ -74,7 +74,9 @@ busy, an old server or stand-in is still running.
 
 - Modal state objects use `m.type` for the modal kind: store other values under other names
   (a library filter once overwrote it and closed the window).
-- `.side` (game sidebar) grid rows must match its children (preview, controls, log, chat).
+- `.side` (game sidebar) grid rows must match its children (controls, log, chat). The card preview is not in
+  the sidebar: it is a fixed overlay (`#preview`) shown on hover. Size it by width, never by `vh` caps (those
+  kept it ~155px wide on laptops through several attempts).
 - The hand is a short strip: cards show their top 60% and magnify like the Mac Dock (`magnifyHand`), starting
   only once the pointer is on the strip (then kept while on a raised card);
   drag ghosts must clear the magnified transform.
