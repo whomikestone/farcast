@@ -46,6 +46,7 @@ The tabletop replaces OBS + Moxfield + SpellTable for card play.
 - ✅ Card size setting: Small / Medium / Large, separately for your hand and the table (View…)
 - ✅ Larger hover preview in the sidebar, with a size setting
 - ✅ Preview style setting: pop up while pointing, or pinned in a sidebar as wide as the preview, until you point at another card (View…)
+- ✅ Drag your commander from the command zone onto the battlefield
 - ✅ Counters up to 999
 
 *Medium*

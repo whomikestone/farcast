@@ -1318,6 +1318,11 @@ function piles(p) {
       ? (opts.count ? h('span', { class: 'card-back' }) : null)
       : top ? cardFace(top) : null,
     h('span', { class: 'pile-label' }, label, h('b', null, opts.count ?? cards.length)));
+    // Your commander can be dragged straight out of the command zone (the top card, if there are two).
+    if (mine && zone === 'command' && top) {
+      makeDraggable(el, top, 'command');
+      el.title = 'Drag your commander onto the battlefield, or click to see the command zone.';
+    }
     return el;
   };
   const libPile = pile('library', 'Library', [], {
@@ -1336,7 +1341,7 @@ function piles(p) {
       : libPile,
     pile('graveyard', 'Graveyard', p.graveyard),
     pile('exile', 'Exile', p.exile),
-    pile('command', 'Command', p.command),
+    pile('command', 'Command', p.command, { menu: mine && p.command.length ? () => cardMenu(p.command[p.command.length - 1], 'command') : null }),
   ];
 }
 
@@ -1747,6 +1752,7 @@ function makeDraggable(el, card, zone) {
       if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 6) {
         clearTimeout(longPress);
         ghost = el.cloneNode(true);
+        ghost.querySelector('.pile-label')?.remove(); // dragging out of a pile shows just the card
         ghost.style.transform = '';
         ghost.style.zIndex = '';
         resetHand();
@@ -1876,6 +1882,14 @@ function cardMenu(c, zone) {
       { label: 'Put on bottom of library', run: mv(c, 'library', { pos: 'bottom' }) },
       { label: 'Put into library at position…', run: () => libraryPositionPrompt(c) },
       { label: 'Move to command zone', run: mv(c, 'command') },
+    ];
+  }
+  if (zone === 'command') {
+    return [
+      { label: 'Play', hint: 'Drag', run: mv(c, 'battlefield') },
+      { label: 'Play face down', run: mv(c, 'battlefield', { faceDown: true }) },
+      '-',
+      { label: 'Put into hand', run: mv(c, 'hand') },
     ];
   }
   const hasCounters = Object.keys(c.counters).length > 0;
