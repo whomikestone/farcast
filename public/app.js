@@ -1552,7 +1552,7 @@ function viewSettings() {
     h('div', { class: 'view-row' },
       h('span', null, 'Preview style'),
       segmented('Preview style', [['popup', 'Pop up'], ['pinned', 'Pinned']], v.previewMode, set('previewMode'))),
-    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. Pop up shows a large card while you point at one; larger sizes reach past the sidebar onto the table. Pinned keeps the last card you pointed at in the top of the sidebar until you point at another; larger sizes leave less room for the game log.'));
+    h('p', { class: 'hint' }, 'These only change your screen, and are remembered in this browser. Larger table cards fit fewer rows on the playmat. Pop up shows a large card while you point at one; larger sizes reach past the sidebar onto the table. Pinned widens the sidebar to the preview size and keeps the last card you pointed at there until you point at another; on shorter screens the card shrinks to leave room for the game log.'));
 }
 
 function maybeAutoBegin() {
