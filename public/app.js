@@ -1271,7 +1271,7 @@ function seatBar(p) {
       Object.entries(p.counters).filter(([k, v]) => k !== 'poison' && v > 0).map(([k, v]) =>
         tracker(k[0].toUpperCase() + k.slice(1), v, mine ? (d) => send({ t: 'playerCounter', kind: k, delta: d }) : null))),
     h('div', { class: 'counts' },
-      mine ? null : h('span', { class: 'hand-count', title: 'Cards in hand' }, h('span', { class: 'mini-back', 'aria-hidden': 'true' }), `${p.handCount} in hand`),
+      h('span', { class: 'hand-count', title: 'Cards in hand' }, h('span', { class: 'mini-back', 'aria-hidden': 'true' }), `${p.handCount} in hand`),
       h('span', null, `${p.libraryCount} in library`)),
   ];
 }
